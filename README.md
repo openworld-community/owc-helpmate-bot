@@ -10,11 +10,15 @@ Supabase CLI setup: https://supabase.com/docs/guides/cli
 
 supabase login
 
-supabase link --project-ref <SUPABASE_PROJECT_ID>
+supabase link --project-ref cxopfnqvgblflivwrubv
 
 supabase secrets set --env-file ./.env
 
 supabase secrets list
+
+# open link:
+
+https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook?url=https://cxopfnqvgblflivwrubv.functions.supabase.co/helpmate-bot?secret=cxopfnqvgblflivwrubv
 
 # Local check (need Deno installed):
 
