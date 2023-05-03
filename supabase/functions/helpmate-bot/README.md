@@ -1,7 +1,5 @@
 # helpmate-bot
 
-Try it out: https://t.me/HelpmateRobot
-
 ## Deploy
 
 1. Run `supabase functions deploy helpmate-bot --no-verify-jwt`

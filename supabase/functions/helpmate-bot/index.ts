@@ -1,14 +1,7 @@
-// not allowed at supabase functions deploy
-//import { load } from 'https://deno.land/std@0.185.0/dotenv/mod.ts';
-
-const ENV = (typeof load !== 'undefined') ? (await load()) : {};
-const APP_NAME = Deno.env.get('APP_NAME') || ENV['APP_NAME'];
-const TELEGRAM_BOT_NAME = Deno.env.get('TELEGRAM_BOT_NAME') || ENV['TELEGRAM_BOT_NAME'];
-const TELEGRAM_BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN') || ENV['TELEGRAM_BOT_TOKEN'];
-const TELEGRAM_BOT_SECRET = Deno.env.get('TELEGRAM_BOT_SECRET') || ENV['TELEGRAM_BOT_SECRET'];
-
+import { DEBUG, APP_NAME, TELEGRAM_BOT_NAME, TELEGRAM_BOT_TOKEN, TELEGRAM_BOT_SECRET, SUPABASE_DB_URL } from './vars.ts';
+import { supabaseClient, pgClient } from './supabase.ts';
 import { serve } from 'https://deno.land/std@0.185.0/http/server.ts';
-import { Bot, webhookCallback } from 'https://deno.land/x/grammy/mod.ts';
+import { Bot, webhookCallback } from 'https://deno.land/x/grammy@v1.16.0/mod.ts';
 
 console.log(`Bot "${APP_NAME}" up and running!`);
 console.log('TELEGRAM_BOT_NAME:', TELEGRAM_BOT_NAME, 'TELEGRAM_BOT_SECRET:', TELEGRAM_BOT_SECRET);
@@ -32,6 +25,7 @@ if (!!TELEGRAM_BOT_SECRET) {
       return await handleUpdate(req);
     } catch (err) {
       console.error(err);
+      return new Response(String(err?.message ?? err), { status: 500 })
     }
   });
 } else {
