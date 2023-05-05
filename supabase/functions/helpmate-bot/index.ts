@@ -1,7 +1,7 @@
 import { initBot } from './bot.ts';
 import { serve } from 'https://deno.land/std@0.185.0/http/server.ts';
 import ENV from './vars.ts';
-const { DEBUG, APP_NAME, TELEGRAM_BOT_SECRET, ADMIN_IDS } = ENV;
+const { DEBUG, APP_NAME, TELEGRAM_BOT_SECRET } = ENV;
 
 console.info(`Bot "${APP_NAME}" up and running!`);
 
@@ -22,6 +22,7 @@ try {
       }
     });
   } else {
+    if (DEBUG) console.log(`Bot started.`);
     bot.start();
   }
 
