@@ -27,6 +27,11 @@ export const initBot = () => {
     inline_keyboard: [[keyboardButton]]
   };
 
+  const keyboardMarkup: ReplyKeyboardMarkup = {
+    keyboard: [[keyboardButton]],
+    is_persistent: false,
+  }
+
   //const inlineKeyboard = new InlineKeyboard();
   //inlineKeyboard.text('click', 'click-payload');
 
@@ -40,19 +45,17 @@ export const initBot = () => {
   });
 
   bot.command('inline', async (ctx) => {
-    await ctx.reply('Inline:', { reply_markup: inlineKeyboardMarkup });
+    await ctx.reply('/inline WebApp:', { reply_markup: inlineKeyboardMarkup });
   });
 
-  const keyboardMarkup: ReplyKeyboardMarkup = {
-    keyboard: [[keyboardButton]],
-    is_persistent: true,
-  }
+  bot.command('start', async (ctx) => {
+    await ctx.reply('/inline WebApp:', { reply_markup: inlineKeyboardMarkup });
+  });
 
   bot.command('menu', async (ctx) => {
     await ctx.reply('Menu:', { reply_markup: keyboardMarkup });
   });
 
-  bot.command('start', (ctx) => ctx.reply('Welcome! Up and running.'));
   bot.command('ping', (ctx) => {
     const country = ctx.session?.country;
     ctx.reply(`Pong! ${new Date()} ${Date.now()} selected country: ${country}`);
