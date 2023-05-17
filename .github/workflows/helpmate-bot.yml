@@ -25,7 +25,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        function: [ 'helpmate-bot --no-verify-jwt' ]
+        function: [ 'helpmate-bot --no-verify-jwt --import-map ./supabase/functions/import_map.json' ]
+        # --legacy-bundle
 
     steps:
       - name: Checkout code
