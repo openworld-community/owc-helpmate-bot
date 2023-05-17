@@ -1,0 +1,27 @@
+{
+  "imports": {
+    "$lib/": "../_lib/",
+    "esm/": "https://esm.sh/",
+    "x/": "https://deno.land/x/",
+    "std/": "https://deno.land/std@0.185.0/",
+    "dotenv": "https://deno.land/std@0.185.0/dotenv/mod.ts",
+    "http/server": "https://deno.land/std@0.185.0/http/server.ts",
+    "oak": "https://deno.land/x/oak@v11.1.0/mod.ts",
+    "denomailer": "https://deno.land/x/denomailer@0.12.0/mod.ts",
+    "og_edge": "https://deno.land/x/og_edge@0.0.4/mod.ts",
+    "puppeteer": "https://deno.land/x/puppeteer@16.2.0/mod.ts",
+    "upstash_redis": "https://deno.land/x/upstash_redis@v1.19.3/mod.ts",
+    "grammy": "https://deno.land/x/grammy@v1.16.0/mod.ts",
+    "grammyfluent": "https://deno.land/x/grammyfluent@1.2/mod.ts",
+    "grammy_types": "https://deno.land/x/grammy_types@v3.1.1/mod.ts",
+    "grammy_hydrate": "https://deno.land/x/grammy_hydrate@v1.3.1/mod.ts",
+    "grammy_storage_supabase": "https://deno.land/x/grammy_storage_supabase@v0.1.0/mod.ts",
+    "postgres": "https://deno.land/x/postgres@v0.17.0/mod.ts",
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.7.1",
+    "short-unique-id": "https://esm.sh/short-unique-id@4.4.4",
+    "enum": "https://deno.land/x/enum@v3.0.4/index.js",
+    "openai": "https://esm.sh/openai@3.1.0",
+    "react": "https://esm.sh/react@18.2.0",
+    "React": "https://esm.sh/react@18.2.0?deno-std=0.185.0"
+  }
+}
