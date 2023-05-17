@@ -22,4 +22,4 @@ https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook?url=https://cxopfnqv
 
 # Local check (need Deno installed):
 
-deno run --allow-net --allow-read --allow-env ./supabase/functions/helpmate-bot/index.ts
+deno run --allow-net --allow-read --allow-env --import-map ./supabase/functions/import_map.json ./supabase/functions/helpmate-bot/index.ts
