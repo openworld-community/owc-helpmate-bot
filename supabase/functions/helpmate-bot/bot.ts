@@ -5,6 +5,7 @@ import { useFluent, Fluent } from 'grammyfluent';
 import { SessionInit, SessionSave, BotContext } from './context.ts';
 import { supabaseClient, supabaseCreateStorage } from './supabase.ts';
 import { locales } from './locales.ts';
+//import { getFiles } from './bucket.ts';
 
 import type { Country, City, Lang } from './types.ts';
 
