@@ -1,25 +1,26 @@
+import Enum from 'enum';
+import { langs } from './locales.ts';
+import { countries } from './countries.ts';
+
+const langcodes = langs.map(el=>{
+  const res = {};
+  res[el.name] = el.code;
+  return res;
+});
+const countrycodes = countries.map(el=>{
+  const res = {};
+  res[el.code] = el.code;
+  return res;
+});
+
+export type Lang = new Enum(langcodes);
+export type Country = new Enum(countrycodes);
+export type City = string | undefined;
+
 export type UUID = string; // 'GDa608f973aRCHLXQYPTbKDbjDeVsSb3'
 export type ISODate = string; // '2021-10-29T21:52:35.830Z'
 export type Timestamp = number | string; // 1683628086
 export type Date = ISODate | Timestamp | null;
-
-export enum Country {
-  RU = 'RU',
-  BY = 'BY',
-  UA = 'UA',
-  US = 'US',
-  UK = 'UK',
-};
-
-export enum Lang {
-  RU = 'ru',
-  EN = 'en',
-};
-
-export enum LangCode {
-  RU = 'ru-RU',
-  EN = 'en-US',
-};
 
 export interface SessionData {
   id: number;
@@ -29,7 +30,9 @@ export interface SessionData {
   auth_date?: Date;
   hash?: string;
   country?: Country;
+  city?: City;
 	language_code?: Lang;
+  __language_code?: Lang;
 	first_name?: string;
   last_name?: string;
 	username?: string;

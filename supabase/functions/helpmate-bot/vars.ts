@@ -1,5 +1,5 @@
 // not allowed at supabase functions deploy
-import { load } from 'https://deno.land/std@0.185.0/dotenv/mod.ts';
+import { load } from 'dotenv';
 
 const DENO_ENV = Deno.env.toObject(); // DENO_ENV.DENO_DEPLOYMENT_ID // DENO_ENV.DENO_REGION
 const LOADED_ENV = (typeof load !== 'undefined' && !!!DENO_ENV.DENO_DEPLOYMENT_ID) ? { DEBUG: true, ...(await load()) } : { DEBUG: false };

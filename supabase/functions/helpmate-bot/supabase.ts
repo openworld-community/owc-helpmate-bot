@@ -1,9 +1,9 @@
-import { SupabaseAdapter } from "https://deno.land/x/grammy_storage_supabase@v0.1.0/mod.ts";
-import * as Postgres from 'https://deno.land/x/postgres@v0.17.0/mod.ts';
-import * as Supabase from 'https://esm.sh/@supabase/supabase-js';
+import { SupabaseAdapter } from 'grammy_storage_supabase';
+import * as Postgres from 'postgres';
+import * as Supabase from '@supabase/supabase-js';
 
 import ENV from './vars.ts';
-const { DEBUG, APP_NAME, SUPABASE_URL, SUPABASE_DB_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY } = ENV;
+const { DEBUG, APP_NAME, SUPABASE_URL, SUPABASE_DB_URI, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY } = ENV;
 
 export type SessionType = Supabase.Session;
 export type UserType = Supabase.User;
@@ -12,11 +12,11 @@ const { Pool, Client } = Postgres;
 
 // Create a database pool with ten connections that are lazily established
 export const pgCreatePool = (size: number = 3): Pool => {
-  return new Pool(SUPABASE_DB_URL, size);
+  return new Pool(SUPABASE_DB_URI, size);
 };
 
 export const pgCreateClient = (): Client => {
-  return new Client(SUPABASE_DB_URL);
+  return new Client(SUPABASE_DB_URI);
 };
 
 export const supabaseCreateClient = (schema: string = 'public') => {

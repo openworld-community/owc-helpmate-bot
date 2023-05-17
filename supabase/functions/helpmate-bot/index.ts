@@ -1,12 +1,13 @@
+import { serve } from 'http/server';
 import { initBot } from './bot.ts';
-import { serve } from 'https://deno.land/std@0.185.0/http/server.ts';
+
 import ENV from './vars.ts';
 const { DEBUG, APP_NAME, TELEGRAM_BOT_SECRET } = ENV;
 
 console.info(`Bot "${APP_NAME}" up and running!`);
 
 try {
-  const { bot, handleUpdate } = initBot();
+  const { bot, handleUpdate } = await initBot();
 
   if (!!TELEGRAM_BOT_SECRET) {
     serve(async (req) => {

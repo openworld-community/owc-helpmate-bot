@@ -1,7 +1,9 @@
-import {Api, Context, NextFunction, SessionFlavor} from 'https://deno.land/x/grammy@v1.16.0/mod.ts';
-import {HydrateApiFlavor, HydrateFlavor} from 'https://deno.land/x/grammy_hydrate@v1.3.1/mod.ts';
-import ShortUniqueId from 'https://esm.sh/short-unique-id';
-import type { Session } from './types';
+import { Api, Context, NextFunction, SessionFlavor } from 'grammy';
+import { HydrateApiFlavor, HydrateFlavor } from 'grammy_hydrate';
+import { FluentContextFlavor } from 'grammyfluent';
+import ShortUniqueId from 'short-unique-id';
+import type { Session } from './types.ts';
+
 import ENV from './vars.ts';
 const { DEBUG } = ENV;
 
@@ -26,8 +28,9 @@ export const SessionSave = async (ctx: Context, next: NextFunction): Promise<voi
   ctx.session.last_name = String(ctx.chat?.last_name || ctx.from?.last_name || '');
   ctx.session.username = String(ctx.chat?.username || ctx.from?.username || '');
   await next();
-}
+};
 
 // Flavor the context type to include sessions.
 export type HydrateContext = HydrateFlavor<Context> & HydrateApiFlavor<Api>;
-export type SessionContext = SessionFlavor<SessionData>;
+export type SessionContext = SessionFlavor<Session> & FluentContextFlavor;
+export type BotContext = HydrateContext & SessionContext;

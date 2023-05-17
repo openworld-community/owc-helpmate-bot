@@ -1,10 +1,9 @@
 import { supabaseAdminClient as supabaseClient } from './supabase.ts';
+
 import ENV from './vars.ts';
-const { DEBUG, SUPABASE_PUBLIC_BUCKET, SUPABASE_PUBLIC_BASEPATH } = ENV;
+const { DEBUG, PUBLIC_FILES_BUCKET } = ENV;
 
-console.info('SUPABASE_PUBLIC_BUCKET:', SUPABASE_PUBLIC_BUCKET);
-
-export const createSignedUrls = async (filePaths, ts = 600, bucket = SUPABASE_PUBLIC_BUCKET) => { // 10 minutes
+export const createSignedUrls = async (filePaths, ts = 600, bucket = PUBLIC_FILES_BUCKET) => { // 600 sec = 10 minutes
 	try {
 		return await supabaseClient.storage.from(bucket)
 			.createSignedUrls([].concat(filePaths), ts);
@@ -13,7 +12,7 @@ export const createSignedUrls = async (filePaths, ts = 600, bucket = SUPABASE_PU
 	}
 };
 
-export const getPublicUrl = async (filePath, bucket = SUPABASE_PUBLIC_BUCKET) => {
+export const getPublicUrl = async (filePath, bucket = PUBLIC_FILES_BUCKET) => {
 	try {
 		return await supabaseClient.storage.from(bucket)
 			.getPublicUrl(filePath);
@@ -22,7 +21,7 @@ export const getPublicUrl = async (filePath, bucket = SUPABASE_PUBLIC_BUCKET) =>
 	}
 };
 
-export const getFiles = async (dir, search = '', offset = 0, limit = 100, sortBy = { column: 'updated_at', order: 'desc' }, bucket = SUPABASE_PUBLIC_BUCKET) => {
+export const getFiles = async (dir, search = '', offset = 0, limit = 100, sortBy = { column: 'updated_at', order: 'desc' }, bucket = PUBLIC_FILES_BUCKET) => {
 	try {
 		const {	data, error } = await supabaseClient.storage.from(bucket)
 			.list(dir, { limit, offset, sortBy, search });
@@ -33,7 +32,7 @@ export const getFiles = async (dir, search = '', offset = 0, limit = 100, sortBy
 	}
 };
 
-export const uploadFile = async (filePath, fileBuffer, bucket = SUPABASE_PUBLIC_BUCKET) => {
+export const uploadFile = async (filePath, fileBuffer, bucket = PUBLIC_FILES_BUCKET) => {
 	try {
 		return await supabaseClient.storage.from(bucket)
 			.upload(filePath, fileBuffer, { cacheControl: '3600',	upsert: false	});
@@ -42,7 +41,7 @@ export const uploadFile = async (filePath, fileBuffer, bucket = SUPABASE_PUBLIC_
 	}
 };
 
-export const deleteFiles = async (filePaths, bucket = SUPABASE_PUBLIC_BUCKET) => {
+export const deleteFiles = async (filePaths, bucket = PUBLIC_FILES_BUCKET) => {
 	try {
 		return await supabaseClient.storage.from(bucket)
 			.remove([].concat(filePaths));
