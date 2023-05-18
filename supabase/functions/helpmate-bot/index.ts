@@ -1,7 +1,7 @@
 import { serve } from 'http/server';
 import { initBot } from './bot.ts';
 
-import ENV from './vars.ts';
+import ENV from '$lib/vars.ts';
 const { DEBUG, APP_NAME, TELEGRAM_BOT_SECRET } = ENV;
 
 console.info(`Bot "${APP_NAME}" up and running!`);

@@ -3,31 +3,61 @@ import { ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup } from 'gramm
 import { hydrateApi, hydrateContext } from 'grammy_hydrate';
 import { useFluent, Fluent } from 'grammyfluent';
 import { SessionInit, SessionSave, BotContext } from './context.ts';
-import { supabaseClient, supabaseCreateStorage } from './supabase.ts';
-import { locales } from './locales.ts';
-//import { getFiles } from './bucket.ts';
+import { supabaseClient, supabaseCreateStorage } from '$lib/supabase.ts';
+import { locales } from '$lib/locales.ts';
+import type { ChatID, Country, State, City, Role, Lang, UserData, Profile } from '$lib/types.ts';
 
-import type { Country, City, Lang } from './types.ts';
-
-import ENV from './vars.ts';
+import ENV from '$lib/vars.ts';
 const { DEBUG, TELEGRAM_BOT_SECRET, TELEGRAM_BOT_NAME, TELEGRAM_BOT_TOKEN, TELEGRAM_BOT_WEBAPP, ADMIN_IDS, DEFAULT_LANG = 'en' } = ENV;
 
 console.info('TELEGRAM_BOT_NAME:', TELEGRAM_BOT_NAME, 'ADMIN_IDS:', ADMIN_IDS, 'DEFAULT_LANG:', DEFAULT_LANG);
 
 const getLocale = async (ctx): Promise<Lang> => {
-  return (ctx.session && '__language_code' in ctx.session) ? ctx.session['__language_code'] : ctx.session?.language_code;
+  return ctx.session && '__language_code' in ctx.session && ctx.session['__language_code'];
 };
 
 const setLocale = async (ctx, lang = DEFAULT_LANG): Promise<Lang> => {
+  const user: UserData = ctx.session.user;
   ctx.session['__language_code'] = lang;
   await ctx.fluent.useLocale(lang);
+  const update = await supabaseClient.from('profiles').update({ lang, updated_at: new Date() }).eq('id', user.id).select();
+  if (DEBUG) console.log('setLocale update:', update);
   return lang;
 };
 
 const checkLocale = async (ctx): Promise<Lang> => {
   let lang: Lang = await getLocale(ctx);
-  if (!!!lang) lang = await setLocale(ctx);
+  if (!!!lang) lang = await setLocale(ctx, ctx.session?.user?.language_code || DEFAULT_LANG);
   return lang;
+};
+
+const checkProfile = async (ctx): Promise<Profile> => {
+  const lang: Lang = await checkLocale(ctx);
+  const user: UserData = ctx.session.user;
+  const { data, error } = await supabaseClient.from('profiles').select('*').eq('id', user.id);
+  let profile = !error && data.length>0 && data[0];
+  if (!profile) {
+    profile = {
+      id: user.id,
+      lang,
+      ...user,
+    }
+    if (ADMIN_IDS.includes(user.id)) profile.role = 'super';
+    const insert = await supabaseClient.from('profiles').insert(profile).select();
+    if (DEBUG) console.log('checkProfile insert:', insert);
+  }
+
+  if (profile.lang !== lang) profile.lang = await setLocale(ctx, lang);
+  // TODO: check other user fields
+
+  if (ADMIN_IDS.includes(user.id)) {
+    ctx.reply(`
+      ${JSON.stringify(ctx.msg,null,2)}
+      ${JSON.stringify(ctx.session,null,2)}
+    `);
+  }
+  if (DEBUG) console.log('profile:', profile);
+  return profile as Profile;
 };
 
 type InlineButton = {
@@ -63,9 +93,9 @@ const makeInlineKeyboard = (inlineButtons: InlineButton[]): InlineKeyboard => {
 };
 
 const showInlineKeyboard = async (ctx) => {
-  const lang: Lang = await checkLocale(ctx);
+  const profile = await checkProfile(ctx);
 
-  const webQry = `?id=${ctx.session.id}&uid=${ctx.session.uid}&lang=${lang}`;
+  const webQry = `?uid=${ctx.session.uid}&id=${profile.id}&lang=${profile.lang}`;
   const webApp = `${TELEGRAM_BOT_WEBAPP}${webQry}`;
   const webURL = DEBUG ? `http://127.0.0.1:3003/${webQry}` : webApp;
 
@@ -108,31 +138,27 @@ export const initBot = async () => {
   }));
 
   bot.command('start', async (ctx) => {
-    await checkLocale(ctx);
+    const profile = await checkProfile(ctx);
     ctx.reply(ctx.t('start'));
   });
   bot.command('help', async (ctx) => {
-    await checkLocale(ctx);
-    ctx.reply(ctx.t('help'));
+    const profile = await checkProfile(ctx);
+    ctx.reply(ctx.t('help', { locales: Object.keys(locales).join('|') }));
   });
   bot.command('lang', async (ctx) => {
-    const lang: Lang = ctx.match.trim();
+    const profile = await checkProfile(ctx);
+    const lang: Lang = ctx.match.trim().toLowerCase();
     if (!!lang) await setLocale(ctx, lang);
     ctx.reply(ctx.t('start'));
   });
   bot.command('menu', (ctx) => showInlineKeyboard(ctx));
   bot.command('ping', async (ctx) => {
-    const lang: Lang = await checkLocale(ctx);
-    const language_code: Lang = ctx.session?.language_code;
-    const country: Country = ctx.session?.country;
-    const city: City = ctx.session?.city;
+    const profile = await checkProfile(ctx);
     ctx.reply(`Pong!
     ${new Date()}
     ${Date.now()}
-    language_code: ${language_code}
-    lang: ${lang}
-    country: ${country}
-    city: ${city}
+    id: ${profile.id}
+    lang: ${profile.lang}
     `);
   });
 
