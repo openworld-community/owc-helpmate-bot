@@ -1,6 +1,6 @@
 {
   "imports": {
-    "$lib/": "../_lib/",
+    "$lib/": "./_lib/",
     "esm/": "https://esm.sh/",
     "x/": "https://deno.land/x/",
     "std/": "https://deno.land/std@0.185.0/",
