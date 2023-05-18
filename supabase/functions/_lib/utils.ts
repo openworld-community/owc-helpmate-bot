@@ -1,3 +1,8 @@
+export const toUUID = (str: string, lng: number = 32): string => {
+	return (str.length === lng) ? str.split('').toSpliced(8,0,'-').toSpliced(13,0,'-').toSpliced(18,0,'-').toSpliced(23,0,'-').join('').toLowerCase() : str;
+};
+
+export const fromUUID = (str: string): string => str.replaceAll('-','');
 
 export const parseJson = (data: string, obj?: object | undefined, debug?: boolean): object | undefined => {
 	try {
