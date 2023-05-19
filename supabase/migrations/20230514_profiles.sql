@@ -3,6 +3,7 @@ DROP TABLE IF EXISTS public.profiles;
 -- Create a table for public profiles
 create table public.profiles (
   id BIGINT NOT NULL,
+  uid uuid NOT NULL DEFAULT gen_random_uuid(),
   country BIGINT NULL,
   state BIGINT NULL,
   city BIGINT NULL,
@@ -19,7 +20,7 @@ create table public.profiles (
   CONSTRAINT profiles_country_fkey FOREIGN KEY (country) REFERENCES public.countries (id) ON DELETE NO ACTION ON UPDATE NO ACTION,
   CONSTRAINT profiles_state_fkey FOREIGN KEY (state) REFERENCES public.states (id) ON DELETE NO ACTION ON UPDATE NO ACTION,
   CONSTRAINT profiles_city_fkey FOREIGN KEY (city) REFERENCES public.cities (id) ON DELETE NO ACTION ON UPDATE NO ACTION,
-  CONSTRAINT profiles_un_id UNIQUE (id)
+  CONSTRAINT profiles_un_uid UNIQUE (uid)
 );
 
 --DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
