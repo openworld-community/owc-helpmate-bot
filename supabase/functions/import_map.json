@@ -11,6 +11,8 @@
     "og_edge": "https://deno.land/x/og_edge@0.0.4/mod.ts",
     "puppeteer": "https://deno.land/x/puppeteer@16.2.0/mod.ts",
     "upstash_redis": "https://deno.land/x/upstash_redis@v1.19.3/mod.ts",
+    "hono": "https://deno.land/x/hono/mod.ts",
+    "hono-middleware": "https://deno.land/x/hono/middleware.ts",
     "grammy": "https://deno.land/x/grammy@v1.16.0/mod.ts",
     "grammyfluent": "https://deno.land/x/grammyfluent@1.2/mod.ts",
     "grammy_types": "https://deno.land/x/grammy_types@v3.1.1/mod.ts",
@@ -20,8 +22,13 @@
     "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.7.1",
     "short-unique-id": "https://esm.sh/short-unique-id@4.4.4",
     "enum": "https://deno.land/x/enum@v3.0.4/index.js",
+    "croner": "https://esm.run/croner@6.0.2",
     "openai": "https://esm.sh/openai@3.1.0",
     "react": "https://esm.sh/react@18.2.0",
-    "React": "https://esm.sh/react@18.2.0?deno-std=0.185.0"
+    "React": "https://esm.sh/react@18.2.0?deno-std=0.185.0",
+    "preact": "https://esm.sh/preact@10.7.2",
+    "preact-hooks": "https://esm.sh/preact/hooks",
+    "preact-render-to-string": "https://esm.sh/preact-render-to-string@5.2.0",
+    "wouter-preact": "https://esm.sh/wouter-preact@2.11.0"
   }
 }
