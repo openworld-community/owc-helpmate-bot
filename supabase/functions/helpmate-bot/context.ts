@@ -47,6 +47,7 @@ export const syncProfile = async (ctx: Context, user: User): Promise<Profile> =>
 
     const insert = await supabaseClient.from('profiles').insert(profile).select();
     if (DEBUG) console.log('SessionSave profile insert:', insert);
+    if (insert?.data) profile = insert.data[0];
   } else {
     // sync profile data
     const update_profile = false;
@@ -67,6 +68,7 @@ export const syncProfile = async (ctx: Context, user: User): Promise<Profile> =>
     if (update_profile) {
       const update = await supabaseClient.from('profiles').update({ updated_at: new Date(), ...profile }).eq('id', profile.id).select();
       if (DEBUG) console.log('SessionSave profile update:', update);
+      if (update?.data) profile = update.data[0];
     }
   }
 
