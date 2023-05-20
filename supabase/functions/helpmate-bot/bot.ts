@@ -1,64 +1,18 @@
-import { Keyboard, InlineKeyboard, Bot, Context, session, webhookCallback } from 'grammy';
+import { Context, Keyboard, InlineKeyboard, Bot, MemorySessionStorage, session, webhookCallback } from 'grammy';
 import { ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup } from 'grammy_types';
+import { type ChatMember } from 'grammy-types';
+import { chatMembers } from 'grammy_chat_members';
 import { hydrateApi, hydrateContext } from 'grammy_hydrate';
 import { useFluent, Fluent } from 'grammyfluent';
-import { SessionInit, SessionSave, BotContext } from './context.ts';
+import { SessionInit, SessionSave, BotContext, getLocale, setLocale, syncLocale } from './context.ts';
 import { supabaseClient, supabaseCreateStorage } from '$lib/supabase.ts';
 import { locales } from '$lib/locales.ts';
-import type { ChatID, Country, State, City, Role, Lang, UserData, Profile } from '$lib/types.ts';
+import type { Lang, UserData } from '$lib/types.ts';
 
 import ENV from '$lib/vars.ts';
 const { DEBUG, TELEGRAM_BOT_SECRET, TELEGRAM_BOT_NAME, TELEGRAM_BOT_TOKEN, TELEGRAM_BOT_WEBAPP, ADMIN_IDS, DEFAULT_LANG = 'en' } = ENV;
 
 console.info('TELEGRAM_BOT_NAME:', TELEGRAM_BOT_NAME, 'ADMIN_IDS:', ADMIN_IDS, 'DEFAULT_LANG:', DEFAULT_LANG);
-
-const getLocale = async (ctx): Promise<Lang> => {
-  return ctx.session && '__language_code' in ctx.session && ctx.session['__language_code'];
-};
-
-const setLocale = async (ctx, lang = DEFAULT_LANG): Promise<Lang> => {
-  const user: UserData = ctx.session.user;
-  ctx.session['__language_code'] = lang;
-  await ctx.fluent.useLocale(lang);
-  const update = await supabaseClient.from('profiles').update({ lang, updated_at: new Date() }).eq('id', user.id).select();
-  if (DEBUG) console.log('setLocale update:', update);
-  return lang;
-};
-
-const checkLocale = async (ctx): Promise<Lang> => {
-  let lang: Lang = await getLocale(ctx);
-  if (!!!lang) lang = await setLocale(ctx, ctx.session?.user?.language_code || DEFAULT_LANG);
-  return lang;
-};
-
-const checkProfile = async (ctx): Promise<Profile> => {
-  const lang: Lang = await checkLocale(ctx);
-  const user: UserData = ctx.session.user;
-  const { data, error } = await supabaseClient.from('profiles').select('*').eq('id', user.id);
-  let profile = !error && data.length>0 && data[0];
-  if (!profile) {
-    profile = {
-      id: user.id,
-      lang,
-      ...user,
-    }
-    if (ADMIN_IDS.includes(user.id)) profile.role = 'super';
-    const insert = await supabaseClient.from('profiles').insert(profile).select();
-    if (DEBUG) console.log('checkProfile insert:', insert);
-  }
-
-  if (profile.lang !== lang) profile.lang = await setLocale(ctx, lang);
-  // TODO: check other user fields
-
-  if (ADMIN_IDS.includes(user.id)) {
-    ctx.reply(`
-      ${JSON.stringify(ctx.msg,null,2)}
-      ${JSON.stringify(ctx.session,null,2)}
-    `);
-  }
-  if (DEBUG) console.log('profile:', profile);
-  return profile as Profile;
-};
 
 type InlineButton = {
   type: string;
@@ -92,10 +46,11 @@ const makeInlineKeyboard = (inlineButtons: InlineButton[]): InlineKeyboard => {
   return inlineKeyboard;
 };
 
-const showInlineKeyboard = async (ctx) => {
-  const profile = await checkProfile(ctx);
+const showInlineKeyboard = async (ctx: Context) => {
+  const user: UserData = ctx.session.user;
+  if (!!!user?.id) return;
 
-  const webQry = `?uid=${ctx.session.uid}&id=${profile.id}&lang=${profile.lang}`;
+  const webQry = `?uid=${user.uid}&lang=${user.lang}`;
   const webApp = `${TELEGRAM_BOT_WEBAPP}${webQry}`;
   const webURL = DEBUG ? `http://127.0.0.1:3003/${webQry}` : webApp;
 
@@ -114,6 +69,8 @@ const showInlineKeyboard = async (ctx) => {
 export const initBot = async () => {
   const bot = new Bot<BotContext>(TELEGRAM_BOT_TOKEN);
 
+  const memorySessionAdapter = new MemorySessionStorage<ChatMember>();
+
   const fluent = new Fluent();
   for (let lang of Object.keys(locales)) {
     const source = Object.keys(locales[lang]).map(cmd=>`${cmd} = ${locales[lang][cmd]}`).join('\n');
@@ -130,37 +87,41 @@ export const initBot = async () => {
 
   bot.api.config.use(hydrateApi());
   bot.use(hydrateContext());
+  bot.use(chatMembers(memorySessionAdapter));
   bot.use(session({ initial: SessionInit, storage: supabaseCreateStorage() })); // freeStorage<Session>(bot.token);
   bot.use(SessionSave);
   bot.use(useFluent({
     fluent,
-    localeNegotiator: ctx => ctx.session['__language_code'],
+    localeNegotiator: (ctx: Context) => ctx.session['__language_code'],
   }));
 
-  bot.command('start', async (ctx) => {
-    const profile = await checkProfile(ctx);
-    ctx.reply(ctx.t('start'));
-  });
-  bot.command('help', async (ctx) => {
-    const profile = await checkProfile(ctx);
-    ctx.reply(ctx.t('help', { locales: Object.keys(locales).join('|') }));
-  });
-  bot.command('lang', async (ctx) => {
-    const profile = await checkProfile(ctx);
+  bot.command('menu', (ctx: Context) => showInlineKeyboard(ctx));
+  bot.command('start', (ctx: Context) => ctx.reply(ctx.t('start')));
+  bot.command('help', (ctx: Context) => ctx.reply(ctx.t('help', { locales: Object.keys(locales).join('|') })));
+  bot.command('lang', async (ctx: Context) => {
+    if (!!!ctx.session.user?.id || Number(ctx.chat.id)<1) return;
     const lang: Lang = ctx.match.trim().toLowerCase();
     if (!!lang) await setLocale(ctx, lang);
     ctx.reply(ctx.t('start'));
   });
-  bot.command('menu', (ctx) => showInlineKeyboard(ctx));
-  bot.command('ping', async (ctx) => {
-    const profile = await checkProfile(ctx);
+  bot.command('ping', (ctx: Context) => {
     ctx.reply(`Pong!
     ${new Date()}
     ${Date.now()}
-    id: ${profile.id}
-    lang: ${profile.lang}
     `);
   });
+
+  bot.on('message:text', (ctx: Context) => {
+    ctx.reply(ctx.t('start'));
+    if (ADMIN_IDS.includes(ctx.session?.user?.id)) {
+      ctx.reply(`
+        ${JSON.stringify(ctx.msg,null,2)}
+        ${JSON.stringify(ctx.session,null,2)}
+      `);
+    }
+  });
+  bot.on('message:photo', (ctx: Context) => ctx.reply(ctx.t('start')));
+  bot.on('edited_message', (ctx: Context) => ctx.reply('Ha! Gotcha! You just edited this!', { reply_to_message_id: ctx.editedMessage.message_id }));
 
   ADMIN_IDS.forEach(aid => {
     bot.api.sendMessage(aid, `The @${TELEGRAM_BOT_NAME} bot initialized!`);

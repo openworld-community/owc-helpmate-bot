@@ -24,7 +24,10 @@ try {
     });
   } else {
     if (DEBUG) console.log(`Bot started.`);
-    bot.start();
+    bot.start({
+      // Make sure to specify the desired update types
+      //allowed_updates: ['chat_member', 'message'],
+    });
   }
 
 } catch (err) {

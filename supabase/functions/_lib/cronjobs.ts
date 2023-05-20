@@ -51,11 +51,11 @@ export const createCronjobSql = (cronjob: CronjobView): CronjobSql => {
 };
 
 /*
-select cron.unschedule('saturday-cleanup');
+
 select cron.schedule (
     'saturday-cleanup', -- name of the cron job
     '30 3 * * 6', -- Saturday at 3:30am (GMT)
     $$ delete from events where event_time < now() - interval '1 week' $$
 );
-
+select cron.unschedule('saturday-cleanup');
 */
