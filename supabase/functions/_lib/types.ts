@@ -6,6 +6,7 @@ export type Lang = string | undefined;
 
 export type ChatID = number | string;
 export type UserID = number | string;
+export type UpdateID = number | string;
 export type MessageID = number | string;
 export type CountryID = number | string;
 export type StateID = number | string;
@@ -53,15 +54,31 @@ export type ChatData = {
 
 export type Chat = ChatData | ChatID | undefined;
 
+export interface Entity {
+  offset?: number;
+  length?: number;
+  type?: string;
+};
+
 export interface MessageData {
   message_id: MessageID;
   from: User;
 	chat: Chat;
   date: Date;
   text: string;
+  entities?: Entity[];
 };
 
 export type Message = MessageData | MessageID;
+
+export interface UpdateData {
+  id: UpdateID;
+  from_id?: UserID;
+  chat_id?: ChatID;
+  message: Message;
+};
+
+export type Update = UpdateData | UpdateID;
 
 export enum Role {
   SUPER = 'super',

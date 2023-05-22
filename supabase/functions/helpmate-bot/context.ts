@@ -5,7 +5,7 @@ import { FluentContextFlavor } from 'grammyfluent';
 import ShortUniqueId from 'short-unique-id';
 import { toUUID, fromUUID } from '$lib/utils.ts';
 import { supabaseClient } from '$lib/supabase.ts';
-import type { MemberData, User, Chat, Role, Lang, Profile, Session } from '$lib/types.ts';
+import type { MemberData, User, Chat, Role, Lang, Profile, Session, Update } from '$lib/types.ts';
 
 import ENV from '$lib/vars.ts';
 const { DEBUG, ADMIN_IDS, DEFAULT_LANG = 'en' } = ENV;
@@ -92,7 +92,7 @@ export const syncChat = async (ctx: Context, chat: Chat, chat_member?: MemberDat
     if (DEBUG) console.log('SessionSave chat insert:', insert);
   } else {
     // sync chat data
-    const update_chat = false;
+    let update_chat = false;
 
     if (chat_member?.user?.id) {
       if (chat.admins.length>0 && !chatData.admins.includes(chat_member.user.id)) {
@@ -121,6 +121,25 @@ export const syncChat = async (ctx: Context, chat: Chat, chat_member?: MemberDat
   return chatData;
 };
 
+export const saveUpdate = async (ctx: Context): Promise<Update> => {
+  const update: Update = {
+    id: ctx.update.update_id,
+    from_id: ctx.from.id,
+    chat_id: (ctx.from.id !== ctx.chat.id) ? ctx.chat.id : null,
+    message: {
+      message_id: ctx.update.message.message_id,
+      from: ctx.update.message.from,
+      chat: ctx.update.message.chat,
+      date: ctx.update.message.date,
+      text: ctx.update.message.text,
+      entities: ctx.update.message.entities,
+    }
+  };
+  const insert = await supabaseClient.from('updates').insert(update).select();
+  if (DEBUG) console.log('saveUpdate insert:', insert);
+  return update;
+};
+
 // Install session middleware, and define the initial session value.
 export const SessionInit = (): Session => {
   return {
@@ -130,6 +149,8 @@ export const SessionInit = (): Session => {
 
 export const SessionSave = async (ctx: Context, next: NextFunction): Promise<void> => {
   ctx.session.uid = ctx.session.uid || toUUID(uid.stamp(32));
+
+  if (DEBUG) console.log('SessionSave ctx.update:', ctx.update);
 
   const chat: Chat = ctx.chat;
   if (DEBUG) console.log('SessionSave chat:', chat);
@@ -156,10 +177,24 @@ export const SessionSave = async (ctx: Context, next: NextFunction): Promise<voi
     ctx.session.user = profile;
   }
 
-  if (isPrivateChat(ctx)) await next();
+  const update: Update = await saveUpdate(ctx);
+
+  if (isPrivateChat(ctx)) await next(); // proccess updates if private chat
 };
 
 // Flavor the context type to include sessions.
 export type HydrateContext = HydrateFlavor<Context> & HydrateApiFlavor<Api>;
 export type SessionContext = SessionFlavor<Session> & FluentContextFlavor;
 export type BotContext = HydrateContext & SessionContext & ChatMembersFlavor;
+
+/*
+me: {
+   id: ,
+   is_bot: true,
+   first_name: "",
+   username: "",
+   can_join_groups: true,
+   can_read_all_group_messages: false,
+   supports_inline_queries: false
+},
+*/
