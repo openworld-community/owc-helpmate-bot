@@ -1,6 +1,6 @@
 DROP TABLE IF EXISTS public.chats;
 
--- Create a table for public profiles
+-- Create a table for chats
 create table public.chats (
   id BIGINT NOT NULL,
   uid uuid NOT NULL DEFAULT gen_random_uuid(),
