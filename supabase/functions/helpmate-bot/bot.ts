@@ -1,10 +1,11 @@
-import { Context, Keyboard, InlineKeyboard, Bot, MemorySessionStorage, session, webhookCallback } from 'grammy';
+import { Keyboard, InlineKeyboard, Bot, MemorySessionStorage, session, webhookCallback } from 'grammy';
 import { ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup } from 'grammy_types';
 import { type ChatMember } from 'grammy-types';
 import { chatMembers } from 'grammy_chat_members';
 import { hydrateApi, hydrateContext } from 'grammy_hydrate';
+import { conversations, createConversation } from 'grammy_conversations';
 import { useFluent, Fluent } from 'grammyfluent';
-import { SessionInit, SessionSave, BotContext, getLocale, setLocale, syncLocale } from './context.ts';
+import { SessionInit, SessionSave, BotContext, BotConversation, getLocale, setLocale, syncLocale } from './context.ts';
 import { supabaseClient, supabaseCreateStorage } from '$lib/supabase.ts';
 import { locales } from '$lib/locales.ts';
 import type { Lang, UserData } from '$lib/types.ts';
@@ -46,7 +47,7 @@ const makeInlineKeyboard = (inlineButtons: InlineButton[]): InlineKeyboard => {
   return inlineKeyboard;
 };
 
-const showInlineKeyboard = async (ctx: Context) => {
+const showInlineKeyboard = async (ctx: BotContext) => {
   const user: UserData = ctx.session.user;
   if (!!!user?.id) return;
 
@@ -66,8 +67,35 @@ const showInlineKeyboard = async (ctx: Context) => {
   await ctx.reply(ctx.t('menu'), { reply_markup: inlineKeyboard });
 };
 
+const register = async (conversation: BotConversation, ctx: BotContext) => {
+  await ctx.reply('How many favorite movies do you have?');
+  const count: number = await conversation.form.number();
+  const movies: string[] = [];
+  for (let i = 0; i < count; i++) {
+    await ctx.reply(`Tell me number ${i + 1}!`);
+    const titleCtx = await conversation.waitFor(':text');
+    movies.push(titleCtx.msg.text);
+  }
+  if (movies.length>0) {
+    await ctx.reply('Here is a better ranking!');
+    movies.sort();
+    await ctx.reply(movies.map((m, i) => `${i + 1}. ${m}`).join('\n'));
+  }
+  return;
+};
+
+const unregister = async (conversation: BotConversation, ctx: BotContext) => {
+
+};
+
 export const initBot = async () => {
   const bot = new Bot<BotContext>(TELEGRAM_BOT_TOKEN);
+
+  bot.catch((err) => {
+    const ctx = err.ctx;
+    console.error(`Error while handling update ${ctx.update.update_id}:`);
+    console.error('Error in request:', err.error);
+  });
 
   const memorySessionAdapter = new MemorySessionStorage<ChatMember>();
 
@@ -92,26 +120,58 @@ export const initBot = async () => {
   bot.use(SessionSave);
   bot.use(useFluent({
     fluent,
-    localeNegotiator: (ctx: Context) => ctx.session['__language_code'],
+    localeNegotiator: (ctx: BotContext) => ctx.session['__language_code'] || ctx.session.user?.lang,
   }));
 
-  bot.command('menu', (ctx: Context) => showInlineKeyboard(ctx));
-  bot.command('start', (ctx: Context) => ctx.reply(ctx.t('start')));
-  bot.command('help', (ctx: Context) => ctx.reply(ctx.t('help', { locales: Object.keys(locales).join('|') })));
-  bot.command('lang', async (ctx: Context) => {
+  bot.use(conversations());
+  bot.use(createConversation(register, 'register'));
+  bot.use(createConversation(unregister, 'unregister'));
+  //bot.errorBoundary((err) => console.error('App threw an error!', err),createConversation(register));
+
+  bot.command('register', (ctx: BotContext) => ctx.conversation.enter('register'));
+  bot.command('unregister', (ctx: BotContext) => ctx.conversation.enter('unregister'));
+  bot.command('menu', (ctx: BotContext) => showInlineKeyboard(ctx));
+  bot.command('help', (ctx: BotContext) => ctx.reply(ctx.t('help', { locales: Object.keys(locales).join('|') })));
+  bot.command('reg', (ctx: BotContext) => {
+    if (ctx.chat.id!==ctx.from.id)
+    ctx.reply(ctx.t('reg', { bot_name: TELEGRAM_BOT_NAME, chat_id: String(ctx.chat.id) }), { reply_to_message_id: ctx.msg.message_id });
+  });
+  bot.command('start', async (ctx: BotContext) => {
+    const cmd = ctx.match.trim().toLowerCase();
+    const cmds = cmd.split('_');
+    if (DEBUG) console.log('/start cmds:', cmds);
+    if (cmds.length>1) {
+      // check membership
+      const chat_id = Number(cmds[1]);
+      const { data, error } = await supabaseClient.from('chats').select('*').eq('id', chat_id);
+      const chat = data && data[0];
+      if (DEBUG) console.log('/start chat:', chat);
+      if (chat?.creator == ctx.session.user.id || [].concat(chat?.admins,chat?.members).includes(ctx.session.user.id)) {
+        // start register conversation
+        await ctx.conversation.enter(cmds[0]);
+      } else if (chat) {
+        ctx.reply(ctx.t('member', { chat_title: chat.title, chat_id: String(chat.id) }));
+      } else {
+        ctx.reply(ctx.t('start'));
+      }
+    } else {
+      ctx.reply(ctx.t('start'));
+    }
+  });
+  bot.command('lang', async (ctx: BotContext) => {
     if (!!!ctx.session.user?.id || Number(ctx.chat.id)<1) return;
     const lang: Lang = ctx.match.trim().toLowerCase();
     if (!!lang) await setLocale(ctx, lang);
     ctx.reply(ctx.t('start'));
   });
-  bot.command('ping', (ctx: Context) => {
+  bot.command('ping', (ctx: BotContext) => {
     ctx.reply(`Pong!
     ${new Date()}
     ${Date.now()}
     `);
   });
 
-  bot.on('message:text', (ctx: Context) => {
+  bot.on('message:text', (ctx: BotContext) => {
     ctx.reply(ctx.t('start'));
     if (ADMIN_IDS.includes(ctx.session?.user?.id)) {
       ctx.reply(`
@@ -120,8 +180,8 @@ export const initBot = async () => {
       `);
     }
   });
-  bot.on('message:photo', (ctx: Context) => ctx.reply(ctx.t('start')));
-  bot.on('edited_message', (ctx: Context) => ctx.reply('Ha! Gotcha! You just edited this!', { reply_to_message_id: ctx.editedMessage.message_id }));
+  bot.on('message:photo', (ctx: BotContext) => ctx.reply(ctx.t('start')));
+  bot.on('edited_message', (ctx: BotContext) => ctx.reply('Ha! Gotcha! You just edited this!', { reply_to_message_id: ctx.editedMessage.message_id }));
 
   ADMIN_IDS.forEach(aid => {
     bot.api.sendMessage(aid, `The @${TELEGRAM_BOT_NAME} bot initialized!`);

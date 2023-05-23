@@ -1,4 +1,5 @@
-import { type ChatMembersFlavor } from 'grammy_chat_members';
+import type { ChatMembersFlavor } from 'grammy_chat_members';
+import type { Conversation, ConversationFlavor } from 'grammy_conversations';
 import { Api, Context, NextFunction, SessionFlavor } from 'grammy';
 import { HydrateApiFlavor, HydrateFlavor } from 'grammy_hydrate';
 import { FluentContextFlavor } from 'grammyfluent';
@@ -11,6 +12,10 @@ import ENV from '$lib/vars.ts';
 const { DEBUG, ADMIN_IDS, DEFAULT_LANG = 'en' } = ENV;
 
 const uid = new ShortUniqueId({ length: 32 });
+
+const chatBotCommands = ['/reg'];
+
+export const isChatBotCommand = (ctx: Context): boolean => (!!ctx.update?.message?.entities?.length>0 && String(ctx.update.message.entities[0].type)==='bot_command' && chatBotCommands.includes(ctx.update.message.text));
 
 export const isPrivateChat = (ctx: Context): boolean => (!!ctx.session?.user?.id && Number(ctx.chat.id)>0);
 
@@ -50,7 +55,7 @@ export const syncProfile = async (ctx: Context, user: User): Promise<Profile> =>
     if (insert?.data) profile = insert.data[0];
   } else {
     // sync profile data
-    const update_profile = false;
+    let update_profile = false;
 
     const lang: Lang = await getLocale(ctx);
     if (!!lang && profile.lang !== lang) {
@@ -78,7 +83,8 @@ export const syncProfile = async (ctx: Context, user: User): Promise<Profile> =>
 export const syncChat = async (ctx: Context, chat: Chat, chat_member?: MemberData): Promise<Chat> => {
   if (!!!chat?.id) return;
 
-  chat.admins = chat.members = [];
+  chat.admins = [];
+  chat.members = [];
   if (chat_member?.user?.id) {
     if (chat_member?.status==='creator') chat.creator = chat_member.user.id;
     else if (chat_member?.status==='admin') chat.admins.push(chat_member.user.id);
@@ -136,7 +142,6 @@ export const saveUpdate = async (ctx: Context): Promise<Update> => {
     }
   };
   const insert = await supabaseClient.from('updates').insert(update).select();
-  if (DEBUG) console.log('saveUpdate insert:', insert);
   return update;
 };
 
@@ -169,23 +174,23 @@ export const SessionSave = async (ctx: Context, next: NextFunction): Promise<voi
   };
   if (DEBUG) console.log('SessionSave user:', user);
 
-  const profile = await syncProfile(ctx, user);
-
+  ctx.session.user = await syncProfile(ctx, user);
   if (ctx.from.id !== ctx.chat.id) {
     ctx.session.chat = await syncChat(ctx, chat, chat_member);
-  } else {
-    ctx.session.user = profile;
   }
 
   const update: Update = await saveUpdate(ctx);
 
-  if (isPrivateChat(ctx)) await next(); // proccess updates if private chat
+  if (isPrivateChat(ctx) || isChatBotCommand(ctx)) {
+    await next(); // proccess updates
+  }
 };
 
 // Flavor the context type to include sessions.
 export type HydrateContext = HydrateFlavor<Context> & HydrateApiFlavor<Api>;
 export type SessionContext = SessionFlavor<Session> & FluentContextFlavor;
-export type BotContext = HydrateContext & SessionContext & ChatMembersFlavor;
+export type BotContext = HydrateContext & SessionContext & ChatMembersFlavor & ConversationFlavor;
+export type BotConversation = Conversation<BotContext>;
 
 /*
 me: {
