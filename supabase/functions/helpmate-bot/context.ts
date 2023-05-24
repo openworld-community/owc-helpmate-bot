@@ -2,6 +2,7 @@ import type { ChatMembersFlavor } from 'grammy_chat_members';
 import type { Conversation, ConversationFlavor } from 'grammy_conversations';
 import { Api, Context, NextFunction, SessionFlavor } from 'grammy';
 import { HydrateApiFlavor, HydrateFlavor } from 'grammy_hydrate';
+import { FileApiFlavor, FileFlavor } from 'grammy_files';
 import { FluentContextFlavor } from 'grammyfluent';
 import ShortUniqueId from 'short-unique-id';
 import { toUUID, fromUUID } from '$lib/utils.ts';
@@ -186,10 +187,11 @@ export const SessionSave = async (ctx: Context, next: NextFunction): Promise<voi
   }
 };
 
-// Flavor the context type to include sessions.
+// Flavor the context type to include sessions etc.
 export type HydrateContext = HydrateFlavor<Context> & HydrateApiFlavor<Api>;
+export type FileContext = FileFlavor<Context> & FileApiFlavor<Api>;
 export type SessionContext = SessionFlavor<Session> & FluentContextFlavor;
-export type BotContext = HydrateContext & SessionContext & ChatMembersFlavor & ConversationFlavor;
+export type BotContext = HydrateContext & FileContext & SessionContext & ChatMembersFlavor & ConversationFlavor;
 export type BotConversation = Conversation<BotContext>;
 
 /*

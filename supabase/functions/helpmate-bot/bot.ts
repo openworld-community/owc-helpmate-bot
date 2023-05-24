@@ -2,16 +2,19 @@ import { Keyboard, InlineKeyboard, Bot, MemorySessionStorage, session, webhookCa
 import { Menu, MenuRange } from 'grammy_menu';
 import { ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup } from 'grammy_types';
 import { type ChatMember } from 'grammy-types';
+import { createHash } from 'hash';
 import { limit } from 'grammy_ratelimiter';
 import { chatMembers } from 'grammy_chat_members';
+import { hydrateFiles } from 'grammy_files';
 import { hydrateApi, hydrateContext } from 'grammy_hydrate';
 import { conversations, createConversation } from 'grammy_conversations';
 import { Fluent, useFluent } from 'grammyfluent';
 import { BotWorker, distribute, run } from 'grammy_runner';
 import { SessionInit, SessionSave, BotContext, BotConversation, getLocale, setLocale, syncLocale } from './context.ts';
 import { supabaseClient, supabaseCreateStorage } from '$lib/supabase.ts';
-import { locales } from '$lib/locales.ts';
+import { getFiles, uploadFile } from '$lib/bucket.ts';
 import { isNumeric } from '$lib/utils.ts';
+import { locales } from '$lib/locales.ts';
 import type { Lang, UserData } from '$lib/types.ts';
 
 import ENV from '$lib/vars.ts';
@@ -122,6 +125,7 @@ export const initBot = async () => {
   }
 
   bot.api.config.use(hydrateApi());
+  bot.api.config.use(hydrateFiles(TELEGRAM_BOT_TOKEN));
   bot.use(hydrateContext());
   bot.use(chatMembers(memorySessionAdapter));
   bot.use(session({ initial: SessionInit, storage: supabaseCreateStorage() })); // freeStorage<Session>(bot.token);
@@ -186,17 +190,62 @@ export const initBot = async () => {
     `);
   });
 
+  bot.hears(/file*(.+)?/, async (ctx) => {
+    if (ADMIN_IDS.includes(ctx.msg.from.id)) {
+      const { files, error } = await getFiles('content');
+      if (DEBUG) console.log('files:', files);
+      ctx.reply(`${JSON.stringify(files,null,2)}`);
+    }
+  });
+
   bot.on('message:text', (ctx: BotContext) => {
     ctx.reply(ctx.t('start'));
     if (ADMIN_IDS.includes(ctx.session?.user?.id)) {
-      ctx.reply(`
-        ${JSON.stringify(ctx.msg,null,2)}
-        ${JSON.stringify(ctx.session,null,2)}
-      `);
+      ctx.reply(`${JSON.stringify(ctx.session,null,2)}`);
     }
   });
   bot.on('message:photo', (ctx: BotContext) => ctx.reply(ctx.t('start')));
   bot.on('edited_message', (ctx: BotContext) => ctx.reply('Ha! Gotcha! You just edited this!', { reply_to_message_id: ctx.editedMessage.message_id }));
+
+  // Getting files
+  bot.on([":audio", ":video", ":animation"], async (ctx) => {
+    if (ADMIN_IDS.includes(ctx.session?.user?.id)) {
+      // Prepare the file for download.
+      const { file_id, file_unique_id, file_size, file_path, getUrl } = await ctx.getFile();
+      const url = await getUrl();
+      const fileBuffer = await (await (await fetch(url)).blob()).arrayBuffer();
+      if (fileBuffer) {
+        const hash = createHash('md5').update(fileBuffer).toString();
+        const [ dir, filename ] = file_path.split('/');
+        const { files, error } = await getFiles(dir, hash);
+        if (!error && files.length>0) {
+          ctx.reply(ctx.t('file_already'));
+        } else {
+          const { data: upload_data, error: upload_error } = await uploadFile(`${dir}/${hash}-${filename}`, fileBuffer);
+          if (!upload_error) {
+            const { files: get_files, error: get_error } = await getFiles(dir, hash);
+            if (!get_error && get_files.length>0) {
+              const file = {
+                uid: get_files[0].id,
+                name: get_files[0].name,
+                file_id,
+                file_unique_id,
+                file_path,
+                file_size,
+              }
+              const { data: upsert_data, error: upsert_error } = await supabaseClient.from('files').upsert(file).select();
+              if (DEBUG) console.log(upsert_data);
+            }
+            ctx.reply(ctx.t('file_uploaded'));
+          } else {
+            ctx.reply(ctx.t('file_notuploaded'));
+          }
+        }
+      }
+    } else {
+      ctx.reply(ctx.t('start'));
+    }
+  });
 
   ADMIN_IDS.forEach(aid => {
     bot.api.sendMessage(aid, `The @${TELEGRAM_BOT_NAME} bot initialized!`);
@@ -210,6 +259,39 @@ export const initBot = async () => {
 };
 
 /*
+
+file: {
+  file_id: "CQACAgIAAxkBAAIEX2RuIUuWTQcNM7rsq1b7fYpQtvZqAAL4KwACeBtwS5CiUh9-CQzKLwQ",
+  file_unique_id: "AgAD-CsAAngbcEs",
+  file_size: 2837325,
+  file_path: "music/file_0.mp3",
+  getUrl: [Function: getUrl],
+  download: [AsyncFunction: download]
+}
+
+uploadFile: { path: "music/b2d5dd67de1feb2500c771183ee735aa-file_0.mp3" }
+
+getFiles: [
+  {
+    name: "b2d5dd67de1feb2500c771183ee735aa-file_0.mp3",
+    id: "3afdfcfa-9884-4836-a066-e4a8089e8396",
+    updated_at: "2023-05-24T14:30:07.448795+00:00",
+    created_at: "2023-05-24T14:30:07.212706+00:00",
+    last_accessed_at: "2023-05-24T14:30:07.212706+00:00",
+    metadata: {
+      eTag: '"b2d5dd67de1feb2500c771183ee735aa"',
+      size: 2837325,
+      mimetype: "text/plain;charset=UTF-8",
+      cacheControl: "max-age=3600",
+      lastModified: "2023-05-24T14:30:08.000Z",
+      contentLength: 2837325,
+      httpStatusCode: 200
+    }
+  }
+]
+
+
+
   bot.inlineQuery(/best*(.+)?/, async (ctx) => {
     await ctx.answerInlineQuery(
       [
@@ -240,15 +322,5 @@ export const initBot = async () => {
   bot.hears('salut', (ctx) => ctx.reply('salut'));
   bot.hears('hello', (ctx) => ctx.reply('hello'));
   bot.hears('hola', (ctx) => ctx.reply('hola'));
-  bot.hears(/file*(.+)?/, async (ctx) => {
-    const { files, error } = await getFiles('content');
-    if (DEBUG) console.log('files:', files);
 
-    if (ADMIN_IDS.includes(ctx.msg.from.id)) {
-      ctx.reply(`
-        ${JSON.stringify(ctx.msg,null,2)}
-        ${JSON.stringify(files,null,2)}
-      `);
-    }
-  });
 */
