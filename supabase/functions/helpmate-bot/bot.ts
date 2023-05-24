@@ -2,6 +2,7 @@ import { Keyboard, InlineKeyboard, Bot, MemorySessionStorage, session, webhookCa
 import { Menu, MenuRange } from 'grammy_menu';
 import { ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup } from 'grammy_types';
 import { type ChatMember } from 'grammy-types';
+import { limit } from 'grammy_ratelimiter';
 import { chatMembers } from 'grammy_chat_members';
 import { hydrateApi, hydrateContext } from 'grammy_hydrate';
 import { conversations, createConversation } from 'grammy_conversations';
@@ -129,6 +130,7 @@ export const initBot = async () => {
     fluent,
     localeNegotiator: (ctx: BotContext) => ctx.session['__language_code'] || ctx.session.user?.lang,
   }));
+  bot.use(limit());
 
   bot.use(conversations());
   bot.use(createConversation(register, 'register'));
