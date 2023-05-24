@@ -18,6 +18,7 @@ export const locales = {
     member: "You should be '{$chat_title}' chat member to register as a helper.",
     help: "You can change language using the /lang [{$locales}] command.",
     menu: "Choose an option:",
+    exit: "Exit",
     webapp: "Webapp",
     website: "Website"
   },
@@ -27,6 +28,7 @@ export const locales = {
     member: "Ты должен быть членом группы '{$chat_title}', чтобы стать помощником",
     help: "Язык можно сменить командой /lang [{$locales}]",
     menu: "Выбери вариант:",
+    exit: "Выход",
     webapp: "Приложение",
     website: "Сайт"
   }

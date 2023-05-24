@@ -1,13 +1,16 @@
 import { Keyboard, InlineKeyboard, Bot, MemorySessionStorage, session, webhookCallback } from 'grammy';
+import { Menu, MenuRange } from 'grammy_menu';
 import { ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup } from 'grammy_types';
 import { type ChatMember } from 'grammy-types';
 import { chatMembers } from 'grammy_chat_members';
 import { hydrateApi, hydrateContext } from 'grammy_hydrate';
 import { conversations, createConversation } from 'grammy_conversations';
-import { useFluent, Fluent } from 'grammyfluent';
+import { Fluent, useFluent } from 'grammyfluent';
+import { BotWorker, distribute, run } from 'grammy_runner';
 import { SessionInit, SessionSave, BotContext, BotConversation, getLocale, setLocale, syncLocale } from './context.ts';
 import { supabaseClient, supabaseCreateStorage } from '$lib/supabase.ts';
 import { locales } from '$lib/locales.ts';
+import { isNumeric } from '$lib/utils.ts';
 import type { Lang, UserData } from '$lib/types.ts';
 
 import ENV from '$lib/vars.ts';
@@ -47,7 +50,7 @@ const makeInlineKeyboard = (inlineButtons: InlineButton[]): InlineKeyboard => {
   return inlineKeyboard;
 };
 
-const showInlineKeyboard = async (ctx: BotContext) => {
+const showInlineKeyboard = async (ctx: BotContext): Promise<void> => {
   const user: UserData = ctx.session.user;
   if (!!!user?.id) return;
 
@@ -56,7 +59,7 @@ const showInlineKeyboard = async (ctx: BotContext) => {
   const webURL = DEBUG ? `http://127.0.0.1:3003/${webQry}` : webApp;
 
   const inlineButtons: InlineButton[] = [
-    //{ type: 'text', label: ctx.t('action'), action: 'click-payload' },
+    //{ type: 'text', label: ctx.t('exit'), action: 'exit' },
     { type: 'webApp', label: ctx.t('webapp'), action: `${webApp}&mode=app` },
     { type: 'url', label: ctx.t('website'), action: webURL },
   ];
@@ -67,9 +70,13 @@ const showInlineKeyboard = async (ctx: BotContext) => {
   await ctx.reply(ctx.t('menu'), { reply_markup: inlineKeyboard });
 };
 
-const register = async (conversation: BotConversation, ctx: BotContext) => {
+const register = async (conversation: BotConversation, ctx: BotContext): Promise<void> => {
   await ctx.reply('How many favorite movies do you have?');
-  const count: number = await conversation.form.number();
+  const countCtx = await conversation.waitFor(':text');
+  if (DEBUG) console.log('register count:', countCtx.msg.text);
+  if (!isNumeric(countCtx.msg.text)) return;
+  const count: number = Number(countCtx.msg.text);
+  if (count<1) return;
   const movies: string[] = [];
   for (let i = 0; i < count; i++) {
     await ctx.reply(`Tell me number ${i + 1}!`);
@@ -84,7 +91,7 @@ const register = async (conversation: BotConversation, ctx: BotContext) => {
   return;
 };
 
-const unregister = async (conversation: BotConversation, ctx: BotContext) => {
+const unregister = async (conversation: BotConversation, ctx: BotContext): Promise<void> => {
 
 };
 
@@ -128,8 +135,14 @@ export const initBot = async () => {
   bot.use(createConversation(unregister, 'unregister'));
   //bot.errorBoundary((err) => console.error('App threw an error!', err),createConversation(register));
 
-  bot.command('register', (ctx: BotContext) => ctx.conversation.enter('register'));
-  bot.command('unregister', (ctx: BotContext) => ctx.conversation.enter('unregister'));
+  // Exit conversations when the inline keyboard's `exit` button is pressed.
+  bot.callbackQuery('exit', async (ctx) => {
+    await ctx.conversation.exit();
+    await ctx.answerCallbackQuery();
+  });
+  bot.command('exit', async (ctx: BotContext) => (await ctx.conversation.exit()));
+  bot.command('register', async (ctx: BotContext) => (await ctx.conversation.enter('register')));
+  bot.command('unregister', async (ctx: BotContext) => (await ctx.conversation.enter('unregister')));
   bot.command('menu', (ctx: BotContext) => showInlineKeyboard(ctx));
   bot.command('help', (ctx: BotContext) => ctx.reply(ctx.t('help', { locales: Object.keys(locales).join('|') })));
   bot.command('reg', (ctx: BotContext) => {
@@ -138,7 +151,7 @@ export const initBot = async () => {
   });
   bot.command('start', async (ctx: BotContext) => {
     const cmd = ctx.match.trim().toLowerCase();
-    const cmds = cmd.split('_');
+    const cmds = cmd.split('_').filter(el=>!!el);
     if (DEBUG) console.log('/start cmds:', cmds);
     if (cmds.length>1) {
       // check membership
@@ -189,34 +202,42 @@ export const initBot = async () => {
 
   return {
     bot,
+    run,
     handleUpdate: webhookCallback(bot, 'std/http'),
   };
 };
 
 /*
-
-  bot.callbackQuery('click-payload', async (ctx) => {
-    await ctx.answerCallbackQuery('Inline action done!');
+  bot.inlineQuery(/best*(.+)?/, async (ctx) => {
+    await ctx.answerInlineQuery(
+      [
+        {
+          type: "article",
+          id: "grammy-website",
+          title: "grammY",
+          input_message_content: {
+            message_text:
+  "<b>grammY</b> is the best way to create your own Telegram bots. \
+  They even have a pretty website! 👇",
+            parse_mode: "HTML",
+          },
+          reply_markup: new InlineKeyboard().url(
+            "grammY website",
+            "https://grammy.dev/",
+          ),
+          url: "https://grammy.dev/",
+          description: "The Telegram Bot Framework.",
+        },
+      ],
+      { cache_time: 30 * 24 * 3600 }, // one month in seconds
+    );
   });
-  bot.on('callback_query', async (ctx) => {
-    if (DEBUG) console.log('ctx.callbackQuery:', ctx.callbackQuery);
-    await ctx.answerCallbackQuery(); // remove loading animation
-  });
-
-  bot.command('help', (ctx) => {
-      ctx.reply(`
-      The @${TELEGRAM_BOT_NAME} bot could greet people in different languages.
-      The list of supported greetings:
-      - hello - English
-      - salut - French
-      - hola - Spanish
-      `);
-  });
+  // Return empty result list for other queries.
+  bot.on('inline_query', (ctx) => ctx.answerInlineQuery([]));
 
   bot.hears('salut', (ctx) => ctx.reply('salut'));
   bot.hears('hello', (ctx) => ctx.reply('hello'));
   bot.hears('hola', (ctx) => ctx.reply('hola'));
-
   bot.hears(/file*(.+)?/, async (ctx) => {
     const { files, error } = await getFiles('content');
     if (DEBUG) console.log('files:', files);
@@ -228,18 +249,4 @@ export const initBot = async () => {
       `);
     }
   });
-
-  //bot.inlineQuery(/best*(.+)?/, (ctx) => showInlineKeyboard(ctx));
-  // Return empty result list for other queries.
-  //bot.on('inline_query', (ctx) => ctx.answerInlineQuery([]));
-
-  bot.on('message:text', (ctx) => ctx.reply(`
-    That is text and not a photo!
-    ${JSON.stringify(ctx.msg,null,2)}
-  `));
-  bot.on('message:photo', (ctx) => ctx.reply('Nice photo! Is that you?'));
-  bot.on('edited_message', (ctx) => ctx.reply('Ha! Gotcha! You just edited this!', { reply_to_message_id: ctx.editedMessage.message_id }));
-
-
-
 */

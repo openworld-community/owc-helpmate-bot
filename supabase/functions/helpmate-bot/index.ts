@@ -7,7 +7,7 @@ const { DEBUG, APP_NAME, TELEGRAM_BOT_SECRET } = ENV;
 console.info(`Bot "${APP_NAME}" up and running!`);
 
 try {
-  const { bot, handleUpdate } = await initBot();
+  const { bot, run, handleUpdate } = await initBot();
 
   if (!!TELEGRAM_BOT_SECRET) {
     serve(async (req) => {
@@ -24,10 +24,8 @@ try {
     });
   } else {
     if (DEBUG) console.log(`Bot started.`);
-    bot.start({
-      // Make sure to specify the desired update types
-      //allowed_updates: ['chat_member', 'message'],
-    });
+    //bot.start();
+    const handle = run(bot);
   }
 
 } catch (err) {
