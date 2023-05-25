@@ -99,6 +99,43 @@ const unregister = async (conversation: BotConversation, ctx: BotContext): Promi
 
 };
 
+export const uploadBotFile = async (ctx: BotContext): Promise<void> => {
+	// Prepare the file for download.
+	const { file_id, file_unique_id, file_size, file_path, getUrl } = await ctx.getFile();
+	const url = await getUrl();
+	const fileBuffer = await (await (await fetch(url)).blob()).arrayBuffer();
+	if (fileBuffer) {
+		const hash = createHash('md5').update(fileBuffer).toString();
+		const [ dir, filename ] = file_path.split('/');
+		const { files, error } = await getFiles(dir, hash);
+		if (!error && files.length>0) {
+			ctx.reply(ctx.t('file_already'));
+		} else {
+			const { data: upload_data, error: upload_error } = await uploadFile(`${dir}/${hash}-${filename}`, fileBuffer);
+			if (!upload_error) {
+				const { files: get_files, error: get_error } = await getFiles(dir, hash);
+				if (!get_error && get_files.length>0) {
+					const file = {
+						uid: get_files[0].id,
+						name: get_files[0].name,
+						file_id,
+						file_unique_id,
+						file_path,
+						file_size,
+					}
+					const { data: upsert_data, error: upsert_error } = await supabaseClient.from('files').upsert(file).select();
+					if (DEBUG) console.log(upsert_data);
+				}
+				ctx.reply(ctx.t('file_uploaded'));
+			} else {
+				ctx.reply(ctx.t('file_notuploaded'));
+			}
+		}
+	} else {
+    ctx.reply(ctx.t('file_notuploaded'));
+  }
+};
+
 export const initBot = async () => {
   const bot = new Bot<BotContext>(TELEGRAM_BOT_TOKEN);
 
@@ -190,11 +227,20 @@ export const initBot = async () => {
     `);
   });
 
-  bot.hears(/file*(.+)?/, async (ctx) => {
+  bot.hears(/files*(.+)?/, async (ctx: BotContext, dir = 'content') => {
     if (ADMIN_IDS.includes(ctx.msg.from.id)) {
-      const { files, error } = await getFiles('content');
-      if (DEBUG) console.log('files:', files);
+      const [cmd, dir] = ctx.match;
+      const { files, error } = await getFiles(dir && dir.trim().toLowerCase());
       ctx.reply(`${JSON.stringify(files,null,2)}`);
+    }
+  });
+
+  // Getting files
+  bot.on([":file", ":media", ":voice", ":audio", ":video", ":animation"], async (ctx: BotContext) => {
+    if (ADMIN_IDS.includes(ctx.session?.user?.id)) {
+      await uploadBotFile(ctx);
+    } else {
+      ctx.reply(ctx.t('start'));
     }
   });
 
@@ -207,48 +253,8 @@ export const initBot = async () => {
   bot.on('message:photo', (ctx: BotContext) => ctx.reply(ctx.t('start')));
   bot.on('edited_message', (ctx: BotContext) => ctx.reply('Ha! Gotcha! You just edited this!', { reply_to_message_id: ctx.editedMessage.message_id }));
 
-  // Getting files
-  bot.on([":audio", ":video", ":animation"], async (ctx) => {
-    if (ADMIN_IDS.includes(ctx.session?.user?.id)) {
-      // Prepare the file for download.
-      const { file_id, file_unique_id, file_size, file_path, getUrl } = await ctx.getFile();
-      const url = await getUrl();
-      const fileBuffer = await (await (await fetch(url)).blob()).arrayBuffer();
-      if (fileBuffer) {
-        const hash = createHash('md5').update(fileBuffer).toString();
-        const [ dir, filename ] = file_path.split('/');
-        const { files, error } = await getFiles(dir, hash);
-        if (!error && files.length>0) {
-          ctx.reply(ctx.t('file_already'));
-        } else {
-          const { data: upload_data, error: upload_error } = await uploadFile(`${dir}/${hash}-${filename}`, fileBuffer);
-          if (!upload_error) {
-            const { files: get_files, error: get_error } = await getFiles(dir, hash);
-            if (!get_error && get_files.length>0) {
-              const file = {
-                uid: get_files[0].id,
-                name: get_files[0].name,
-                file_id,
-                file_unique_id,
-                file_path,
-                file_size,
-              }
-              const { data: upsert_data, error: upsert_error } = await supabaseClient.from('files').upsert(file).select();
-              if (DEBUG) console.log(upsert_data);
-            }
-            ctx.reply(ctx.t('file_uploaded'));
-          } else {
-            ctx.reply(ctx.t('file_notuploaded'));
-          }
-        }
-      }
-    } else {
-      ctx.reply(ctx.t('start'));
-    }
-  });
-
   ADMIN_IDS.forEach(aid => {
-    bot.api.sendMessage(aid, `The @${TELEGRAM_BOT_NAME} bot initialized!`);
+    bot.api.sendMessage(aid, `The <b>@${TELEGRAM_BOT_NAME}</b> bot initialized!`, { parse_mode: 'HTML' });
   });
 
   return {
