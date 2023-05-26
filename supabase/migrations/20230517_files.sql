@@ -1,6 +1,6 @@
 DROP TABLE IF EXISTS public.files;
 
--- Create a table for updates
+-- Create a table for files
 create table public.files (
   uid uuid NOT NULL DEFAULT gen_random_uuid(),
   name VARCHAR NULL DEFAULT ''::character varying ,
