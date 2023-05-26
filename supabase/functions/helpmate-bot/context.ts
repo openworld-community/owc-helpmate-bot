@@ -14,7 +14,7 @@ const { DEBUG, ADMIN_IDS, DEFAULT_LANG = 'en' } = ENV;
 
 const uid = new ShortUniqueId({ length: 32 });
 
-const chatBotCommands = ['/reg'];
+const chatBotCommands = ['/reg', '/upd'];
 
 export const isChatBotCommand = (ctx: Context): boolean => (!!ctx.update?.message?.entities?.length>0 && String(ctx.update.message.entities[0].type)==='bot_command' && chatBotCommands.includes(ctx.update.message.text));
 
@@ -88,7 +88,7 @@ export const syncChat = async (ctx: Context, chat: Chat, chat_member?: MemberDat
   chat.members = [];
   if (chat_member?.user?.id) {
     if (chat_member?.status==='creator') chat.creator = chat_member.user.id;
-    else if (chat_member?.status==='admin') chat.admins.push(chat_member.user.id);
+    else if (chat_member?.status==='administrator') chat.admins.push(chat_member.user.id);
     else chat.members.push(chat_member.user.id);
   }
 
@@ -112,7 +112,7 @@ export const syncChat = async (ctx: Context, chat: Chat, chat_member?: MemberDat
       }
     }
 
-    ['creator', 'title','type','all_members_are_administrators'].forEach(key => {
+    ['creator', 'title', 'type', 'all_members_are_administrators'].forEach(key => {
       if (chatData[key] !== chat[key]) {
         update_chat = true;
         chatData[key] = chat[key];
@@ -150,6 +150,7 @@ export const saveUpdate = async (ctx: Context): Promise<Update> => {
 export const SessionInit = (): Session => {
   return {
     uid: toUUID(uid.stamp(32)), // uid.parseStamp(fromUUID(uidWithTimestamp))
+    data: {},
   };
 };
 
@@ -179,6 +180,8 @@ export const SessionSave = async (ctx: Context, next: NextFunction): Promise<voi
   if (ctx.from.id !== ctx.chat.id) {
     ctx.session.chat = await syncChat(ctx, chat, chat_member);
   }
+
+  ctx.session.data = {};
 
   const update: Update = await saveUpdate(ctx);
 

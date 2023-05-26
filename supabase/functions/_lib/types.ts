@@ -101,6 +101,7 @@ export type Profile = ProfileData | undefined;
 
 export interface SessionData {
   uid: UUID;
+  data?: object;
   chat?: Chat;
   user?: Profile;
 	expiry_date?: Date;
