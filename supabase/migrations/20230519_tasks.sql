@@ -4,8 +4,9 @@ DROP TABLE IF EXISTS public.tasks;
 create table public.tasks (
   uid uuid NOT NULL DEFAULT gen_random_uuid(),
   chat BIGINT NULL,
+  user BIGINT NULL,
   helper BIGINT NULL,
-  name VARCHAR NULL DEFAULT ''::character varying ,
+  status VARCHAR NULL DEFAULT 'open'::character varying , -- open bad closed
   description TEXT NULL,
   expiry_date TIMESTAMP WITH TIME ZONE NULL DEFAULT now() ,
   created_at TIMESTAMP WITH TIME ZONE NULL DEFAULT now() ,
