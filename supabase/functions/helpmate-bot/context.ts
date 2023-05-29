@@ -10,15 +10,17 @@ import { supabaseClient } from '$lib/supabase.ts';
 import type { MemberData, User, Chat, Role, Lang, Profile, Session, Update } from '$lib/types.ts';
 
 import ENV from '$lib/vars.ts';
-const { DEBUG, ADMIN_IDS, DEFAULT_LANG = 'en' } = ENV;
+const { DEBUG, ADMIN_IDS, SAVE_UPDATES, DEFAULT_LANG = 'en' } = ENV;
 
 const uid = new ShortUniqueId({ length: 32 });
 
-const chatBotCommands = ['/reg', '/upd'];
+const chatBotCommands = ['/help', '/menu', '/upd'];
 
-export const isChatBotCommand = (ctx: Context): boolean => (!!ctx.update?.message?.entities?.length>0 && String(ctx.update.message.entities[0].type)==='bot_command' && chatBotCommands.includes(ctx.update.message.text));
+export const isChatBotCommand = (ctx: Context): boolean => (!!ctx.msg?.entities?.length>0 && String(ctx.msg.entities[0].type)==='bot_command' && chatBotCommands.includes(ctx.msg.text.split('@')[0]));
 
 export const isPrivateChat = (ctx: Context): boolean => (!!ctx.session?.user?.id && Number(ctx.chat.id)>0);
+
+export const isCallbackQuery = (ctx: Context): boolean => (!!ctx.update.callback_query?.data);
 
 export const getLocale = async (ctx: Context): Promise<Lang> => {
   return ctx.session && '__language_code' in ctx.session && ctx.session['__language_code'];
@@ -77,6 +79,12 @@ export const syncProfile = async (ctx: Context, user: User): Promise<Profile> =>
       if (update?.data) profile = update.data[0];
     }
   }
+
+  const helpers = profile.id && (await supabaseClient.from('helpers').select('chat').eq('id', profile.id));
+  if (helpers?.data?.length>0) {
+    profile.helper_in = helpers?.data[0].chat;
+  }
+  if (DEBUG) console.log('profile.helper_in:', profile.helper_in);
 
   return profile;
 };
@@ -187,11 +195,11 @@ export const SessionSave = async (ctx: Context, next: NextFunction): Promise<voi
     ctx.session.chat = await syncChat(ctx, chat, chat_member);
   }
 
-  ctx.session.data = {};
+  if (SAVE_UPDATES) {
+    const update: Update = await saveUpdate(ctx);
+  }
 
-  const update: Update = await saveUpdate(ctx);
-
-  if (isPrivateChat(ctx) || isChatBotCommand(ctx)) {
+  if (isPrivateChat(ctx) || isChatBotCommand(ctx) || isCallbackQuery(ctx)) {
     await next(); // proccess updates
   }
 };

@@ -20,7 +20,7 @@ import type { Lang, UserData } from '$lib/types.ts';
 import ENV from '$lib/vars.ts';
 const { DEBUG, TELEGRAM_BOT_SECRET, TELEGRAM_BOT_NAME, TELEGRAM_BOT_TOKEN, TELEGRAM_BOT_WEBAPP, ADMIN_IDS, DEFAULT_LANG = 'en' } = ENV;
 
-console.info('TELEGRAM_BOT_NAME:', TELEGRAM_BOT_NAME, 'ADMIN_IDS:', ADMIN_IDS, 'DEFAULT_LANG:', DEFAULT_LANG);
+console.info('TELEGRAM_BOT_NAME:', TELEGRAM_BOT_NAME, 'ADMIN_IDS:', ADMIN_IDS);
 
 type InlineButton = {
   type: string;
@@ -54,18 +54,17 @@ const makeInlineKeyboard = (inlineButtons: InlineButton[]): InlineKeyboard => {
   return inlineKeyboard;
 };
 
-const chatInlineKeyboard = async (ctx: BotContext, action: string = 'update', deleteMessage: boolean = false): Promise<void> => {
-  const webURL = `https://t.me/${TELEGRAM_BOT_NAME}?start=${action}_${ctx.chat.id}`
-  const inlineButtons: InlineButton[] = [
-    //{ type: 'text', label: ctx.t('exit'), action: '/exit' },
-    { type: 'url', label: ctx.t(action), action: webURL },
-  ];
+const chatInlineKeyboard = async (ctx: BotContext, actions: string[] = ['register']): Promise<void> => {
+  const inlineButtons: InlineButton[] = actions.map(action => {
+    const tgURL = `https://t.me/${TELEGRAM_BOT_NAME}?start=${action}_${ctx.chat.id}`;
+    return { type: 'url', label: ctx.t(action), action: tgURL };
+  });
   const inlineKeyboard = makeInlineKeyboard(inlineButtons);
-  await ctx.reply(ctx.t('button'), { reply_markup: inlineKeyboard, reply_to_message_id: ctx.msg.message_id });
-  if (deleteMessage && ctx.msg?.message_id) await bot.api.deleteMessage(ctx.chat.id, ctx.msg.message_id);
+  await ctx.reply(ctx.t('button'), { reply_markup: inlineKeyboard }); // , reply_to_message_id: ctx.msg.message_id
+  await ctx.deleteMessage();
 };
 
-const pmInlineKeyboard = async (ctx: BotContext, deleteMessage: boolean = false): Promise<void> => {
+const pmInlineKeyboard = async (ctx: BotContext, inviteLink?: string): Promise<void> => {
   const user: UserData = ctx.session.user;
   if (!!!user?.id) return;
 
@@ -73,16 +72,23 @@ const pmInlineKeyboard = async (ctx: BotContext, deleteMessage: boolean = false)
   const webApp = `${TELEGRAM_BOT_WEBAPP}${webQry}`;
   const webURL = DEBUG ? `http://127.0.0.1:3003/${webQry}` : webApp;
 
-  const inlineButtons: InlineButton[] = [
+  const inlineButtons: InlineButton[] = !!ctx.session.user?.helper_in ? [
+    { type: 'text', label: ctx.t('tasks'), action: '/tasks' },
+    { type: 'text', label: ctx.t('unregister'), action: '/unregister' },
+  ] : [
+    { type: 'text', label: ctx.t('add'), action: '/add' },
     { type: 'webApp', label: ctx.t('webapp'), action: `${webApp}&mode=app` },
-    { type: 'url', label: ctx.t('website'), action: webURL },
+    {
+      type: 'url',
+      label: ctx.t('website'),
+      action: webURL,
+    },
   ];
-
+  //if (!!inviteLink) inlineButtons.push({ type: 'url', label: ctx.t('group'), action: inviteLink });
   const inlineKeyboard = makeInlineKeyboard(inlineButtons);
-
   //await ctx.reply('Hello!', { reply_markup: removeKeyboardMarkup() });
   await ctx.reply(ctx.t('menu'), { reply_markup: inlineKeyboard });
-  if (deleteMessage && ctx.msg?.message_id) await bot.api.deleteMessage(ctx.chat.id, ctx.msg.message_id);
+  await ctx.deleteMessage();
 };
 
 export const uploadBotFile = async (ctx: BotContext): Promise<void> => {
@@ -123,28 +129,119 @@ export const uploadBotFile = async (ctx: BotContext): Promise<void> => {
 };
 
 const registerHelper = async (conversation: BotConversation, ctx: BotContext): Promise<void> => {
-  await ctx.reply('How many favorite movies do you have?');
-  const countCtx = await conversation.waitFor(':text');
-  if (DEBUG) console.log('register count:', countCtx.msg.text);
-  if (!isNumeric(countCtx.msg.text)) return;
-  const count: number = Number(countCtx.msg.text);
-  if (count<1) return;
-  const movies: string[] = [];
-  for (let i = 0; i < count; i++) {
-    await ctx.reply(`Tell me number ${i + 1}!`);
-    const titleCtx = await conversation.waitFor(':text');
-    movies.push(titleCtx.msg.text);
+  if (DEBUG) console.log('registerHelper ctx.session.user?.id:', ctx.session.user?.id, 'ctx.session.data:', ctx.session.data);
+  const chat = ctx.session.data?.chat;
+  if (!!chat?.id && !!!ctx.session.user?.helper_in) {
+    const { data, error } = await supabaseClient.from('helpers').upsert({ id: ctx.session.user.id, chat: chat.id }).select();
+    if (!error && data.length>0) {
+      ctx.session.user.helper_in = chat.id;
+      await pmInlineKeyboard(ctx, chat.invite);
+    } else {
+      await ctx.reply('Error!');
+    }
+  } else {
+    await ctx.reply('Ha-ha!');
   }
-  if (movies.length>0) {
-    await ctx.reply('Here is a better ranking!');
-    movies.sort();
-    await ctx.reply(movies.map((m, i) => `${i + 1}. ${m}`).join('\n'));
-  }
-  return;
 };
 
 const unregisterHelper = async (conversation: BotConversation, ctx: BotContext): Promise<void> => {
-  ctx.reply('unregisterHelper');
+  if (DEBUG) console.log('unregisterHelper ctx.session.user?.helper_in:', ctx.session.user?.helper_in, 'ctx.session.data:', ctx.session.data);
+  if (!!ctx.session.user?.helper_in) {
+    const { error } = await supabaseClient.from('helpers').delete().eq('id', ctx.session.user.id);
+    if (!error) {
+      ctx.session.user.helper_in = null;
+      await pmInlineKeyboard(ctx);
+    }
+  } else {
+    await ctx.reply('Ha-ha!');
+  }
+};
+
+const taskList = async (conversation: BotConversation, ctx: BotContext): Promise<void> => {
+  if (DEBUG) console.log('taskList ctx.session.user?.helper_in:', ctx.session.user?.helper_in, 'ctx.session.data:', ctx.session.data);
+  if (!!ctx.session.user?.helper_in) {
+    const now: Date = new Date;
+    const { data, error } = await supabaseClient.from('tasks').select('*').gt('expiry_date', now.toISOString()).eq('chat', ctx.session.user?.helper_in).eq('status', 'open').is('helper', null);
+    await ctx.reply(JSON.stringify(data,null,2));
+  } else {
+    await ctx.reply('Ha-ha!');
+  }
+};
+
+const addTask = async (conversation: BotConversation, ctx: BotContext): Promise<void> => {
+  let done = false;
+  const chat = ctx.session.data?.chat;
+  if (chat?.id && ctx.from.id === ctx.session.user.id) {
+    while (!done) {
+      if (DEBUG) console.log('addTask ctx.session.data:', ctx.session.data);
+      await ctx.reply(ctx.t('task_description'));
+      const convCtx = await conversation.waitFor(':text');
+      if (DEBUG) console.log('convCtx.msg.text:', convCtx.msg.text);
+      if (convCtx.msg.text.startsWith('/exit')) {
+        await ctx.reply(ctx.t('bye'));
+        return;
+      } else if (convCtx.msg.text.length>3) {
+        const expiry_date = new Date();
+        expiry_date.setDate(expiry_date.getDate() + 1); // plus 1 day
+        const { data, error } = await supabaseClient.from('tasks').upsert({ chat: chat.id, profile: ctx.from.id, description: convCtx.msg.text, expiry_date }).select();
+        if (!error && data?.length>0) {
+          await ctx.reply('Problem added: '+data[0].uid);
+          done = true;
+        } else {
+          await ctx.reply('Error! Try again! Press /exit to quit');
+        }
+      } else {
+        await ctx.reply('Too short! Press /exit to quit');
+      }
+    }
+  } else {
+    await ctx.reply('Ha-ha!');
+  }
+};
+
+const getCountry = async (conversation: BotConversation, ctx: BotContext): Promise<object | undefined> => {
+  await ctx.reply(ctx.t('request_country'));
+  const convCtx = await conversation.waitFor(':text');
+  if (DEBUG) console.log('convCtx.msg.text:', convCtx.msg.text);
+  if (convCtx.msg.text.startsWith('/exit')) {
+    await ctx.reply(ctx.t('bye'));
+  } else if (convCtx.msg.text.length===2) {
+    const { data, error } = await supabaseClient.from('countries').select('*').eq('code', convCtx.msg.text.toUpperCase());
+    if (!error && data?.length>0) {
+      await ctx.reply('Country chosen: '+data[0].name);
+      return data[0];
+    }
+  }
+};
+
+const getState = async (conversation: BotConversation, ctx: BotContext, country: number): Promise<object | undefined> => {
+  await ctx.reply(ctx.t('request_state'));
+  const convCtx = await conversation.waitFor(':text');
+  if (DEBUG) console.log('convCtx.msg.text:', convCtx.msg.text);
+  if (convCtx.msg.text.startsWith('/exit')) {
+    await ctx.reply(ctx.t('bye'));
+  } else if (convCtx.msg.text.length>0 && convCtx.msg.text!=='-') {
+    const { data, error } = await supabaseClient.from('states').select('*').match({ country, 'code': convCtx.msg.text });
+    if (!error && data?.length>0) {
+      await ctx.reply('State chosen: '+data[0].name);
+      return data[0];
+    }
+  }
+};
+
+const getCity = async (conversation: BotConversation, ctx: BotContext, country: number, state?: number): Promise<object | undefined> => {
+  await ctx.reply(ctx.t('request_city'));
+  const convCtx = await conversation.waitFor(':text');
+  if (DEBUG) console.log('convCtx.msg.text:', convCtx.msg.text);
+  if (convCtx.msg.text.startsWith('/exit')) {
+    await ctx.reply(ctx.t('bye'));
+  } else if (convCtx.msg.text.length>0 && convCtx.msg.text!=='-') {
+    const { data, error } = await supabaseClient.from('cities').select('*').eq('country', country).ilike('name', '%'+convCtx.msg.text+'%');
+    if (!error && data?.length>0) {
+      await ctx.reply('City chosen: '+data[0].name);
+      return data[0];
+    }
+  }
 };
 
 const updateChat = async (conversation: BotConversation, ctx: BotContext): Promise<void> => {
@@ -161,83 +258,36 @@ const updateChat = async (conversation: BotConversation, ctx: BotContext): Promi
     city: ''
   };
 
-  await ctx.reply(`You have chosen chat "${chat.title}" with invite link:
-  ${chat.invite}
-  Press /exit if it is the wrong choice
-  `);
+  await ctx.reply(ctx.t('update_start', chat));
 
-  await ctx.reply('Chat invite?');
-  let convCtx = await conversation.waitFor(':text');
-  if (convCtx.msg.text.startsWith('/exit')) {
-    await ctx.reply('Bye!');
-    return;
-  };
-  if (convCtx.msg.text.startsWith('http')) {
-    chat.invite = convCtx.msg.text;
-    chatInfo.invite = convCtx.msg.text;
-  }
-  if (!chat.invite) {
-    await ctx.reply(ctx.t('update_invite'));
-    return;
-  }
-
-  await ctx.reply('Chat country?');
-  convCtx = await conversation.waitFor(':text');
-  if (convCtx.msg.text.startsWith('/exit')) {
-    await ctx.reply('Bye!');
-    return;
-  };
-  if (convCtx.msg.text.length===2) {
-    const { data: countryData } = await supabaseClient.from('countries').select('*').eq('code', convCtx.msg.text.toUpperCase());
-    if (countryData?.length>0) {
-      chat.country = countryData[0].id;
-      chatInfo.country = countryData[0].name;
-      await ctx.reply('Country chosen: '+chatInfo.country);
-    }
-  }
-  if (!chat.country) {
+  const country = await getCountry(conversation, ctx);
+  if (country?.id) {
+    chat.country = country.id;
+    chatInfo.country = country.name;
+  } else {
     await ctx.reply(ctx.t('update_country'));
     return;
   }
 
-  await ctx.reply('Chat state? Send "-" (minus) if none.');
-  convCtx = await conversation.waitFor(':text');
-  if (convCtx.msg.text.startsWith('/exit')) {
-    await ctx.reply('Bye!');
-    return;
-  };
-  if (convCtx.msg.text.length>0 && convCtx.msg.text!=='-') {
-    const { data: stateData } = await supabaseClient.from('states').select('*').match({ country: chat.country, 'code': convCtx.msg.text });
-    if (stateData?.length>0) {
-      chat.state = stateData[0].id;
-      chatInfo.state = stateData[0].name;
-      await ctx.reply('State chosen: '+chatInfo.state);
-    }
+  const state = await getState(conversation, ctx, chat.country);
+  if (state?.id) {
+    chat.state = state.id;
+    chatInfo.state = state.name;
   }
 
-  await ctx.reply('Chat city? Send "-" (minus) if none.');
-  convCtx = await conversation.waitFor(':text');
-  if (convCtx.msg.text.startsWith('/exit')) {
-    await ctx.reply('Bye!');
-    return;
-  };
-  if (convCtx.msg.text.length>0 && convCtx.msg.text!='-') {
-    const { data: cityData } = await supabaseClient.from('cities').select('*').eq('country', chat.country).ilike('name', '%'+convCtx.msg.text+'%');
-    if (cityData?.length>0) {
-      chat.city = cityData[0].id;
-      chatInfo.city = cityData[0].name;
-      await ctx.reply('City chosen: '+chatInfo.city);
-    }
+  const city = await getCity(conversation, ctx, chat.country, chat.state);
+  if (city?.id) {
+    chat.city = city.id;
+    chatInfo.city = city.name;
   }
 
   await ctx.reply(`You have added:
-    invite: ${chatInfo.invite}
     country: ${chatInfo.country}
     state: ${chatInfo.state}
     city: ${chatInfo.city}
     Send "+" (plus) if this is correct.
   `);
-  convCtx = await conversation.waitFor(':text');
+  const convCtx = await conversation.waitFor(':text');
   if (convCtx.msg.text==='+') {
     const { data, error } = await supabaseClient.from('chats').update({ updated_at: new Date(), ...chat }).eq('id', chat.id).select();
     if (DEBUG) console.log('updateChat chat update:', update);
@@ -247,11 +297,16 @@ const updateChat = async (conversation: BotConversation, ctx: BotContext): Promi
     else
       await ctx.reply('Error updating chat info!');
   } else {
-    await ctx.reply('Bye!');
+    await ctx.reply(ctx.t('bye'));
   }
   return;
 };
 
+const showHelp = async (ctx: BotContext): Promise<void> => {
+  if (DEBUG) console.log('/help');
+  await ctx.reply(ctx.t('help', { locales: Object.keys(locales).join('|') }));
+  await ctx.deleteMessage();
+};
 
 export const initBot = async () => {
   const bot = new Bot<BotContext>(TELEGRAM_BOT_TOKEN);
@@ -297,38 +352,74 @@ export const initBot = async () => {
   bot.use(limit());
 
   bot.use(conversations());
+  bot.use(createConversation(taskList, 'tasks'));
+  bot.use(createConversation(addTask, 'add'));
   bot.use(createConversation(registerHelper, 'register'));
   bot.use(createConversation(unregisterHelper, 'unregister'));
   bot.use(createConversation(updateChat, 'update'));
   //bot.errorBoundary((err) => console.error('App threw an error!', err),createConversation(register));
 
   // Exit conversations when the inline keyboard's `exit` button is pressed.
-  bot.callbackQuery('exit', async (ctx) => {
+  bot.callbackQuery('/exit', async (ctx) => {
     await ctx.conversation.exit();
     await ctx.answerCallbackQuery();
+    if (DEBUG) console.log('callbackQuery /exit');
   });
-  // replying /reg command in
-  bot.command('reg', async (ctx: BotContext) => {
+  // replying /help command in
+  bot.hears(/help*(.+)?/, (ctx: BotContext) => showHelp(ctx));
+  // replying /menu command in
+  bot.hears(/menu*(.+)?/, async (ctx: BotContext) => {
+    if (DEBUG) console.log('hears menu, ctx.session.user:', ctx.session.user);
     if (ctx.chat.id!==ctx.from.id) {
-      //await ctx.reply(ctx.t('reg', { bot_name: TELEGRAM_BOT_NAME, chat_id: String(ctx.chat.id) }), { reply_to_message_id: ctx.msg.message_id });
-      //if (ctx.msg?.message_id) await bot.api.deleteMessage(ctx.chat.id, ctx.msg.message_id);
-      await chatInlineKeyboard(ctx, 'register');
-    } else
-      await ctx.conversation.enter('register');
+      await chatInlineKeyboard(ctx, ctx.session.user?.helper_in === ctx.chat.id ? ['bot'] : ['add', 'register']); // ['tasks', 'unregister']
+    } else {
+      await pmInlineKeyboard(ctx);
+    }
   });
   // replying /upd command in
   bot.command('upd', async (ctx: BotContext) => {
     if (ctx.chat.id!==ctx.from.id) {
-      await chatInlineKeyboard(ctx, 'update');
-    } else
+      const { invite_link } = await bot.api.createChatInviteLink(ctx.chat.id);
+      if (!!invite_link) await supabaseClient.from('chats').update({ updated_at: new Date(), invite: invite_link }).eq('id', ctx.chat.id);
+      if (DEBUG) console.log('/upd invite_link:', invite_link);
+      await chatInlineKeyboard(ctx, ['update']);
+      //await ctx.reply(ctx.t('reg', { bot_name: TELEGRAM_BOT_NAME, chat_id: String(ctx.chat.id) }), { reply_to_message_id: ctx.msg.message_id });
+      if (ctx.msg?.message_id) await bot.api.deleteMessage(ctx.chat.id, ctx.msg.message_id);
+    } else {
       await ctx.conversation.enter('update');
+    }
   });
 
   // Only handle commands in private chats.
   const pm = bot.chatType('private');
+  pm.callbackQuery('/add', async (ctx: BotContext) => {
+    //if (ctx.update.callback_query?.message?.message_id) await bot.api.deleteMessage(ctx.chat.id, ctx.update.callback_query.message.message_id);
+    ctx.answerCallbackQuery();
+    await ctx.conversation.enter('add');
+  });
+  pm.callbackQuery('/tasks', async (ctx: BotContext) => {
+    //if (ctx.update.callback_query?.message?.message_id) await bot.api.deleteMessage(ctx.chat.id, ctx.update.callback_query.message.message_id);
+    ctx.answerCallbackQuery();
+    await ctx.conversation.enter('tasks');
+  });
+  pm.callbackQuery('/register', async (ctx: BotContext) => {
+    //if (ctx.update.callback_query?.message?.message_id) await bot.api.deleteMessage(ctx.chat.id, ctx.update.callback_query.message.message_id);
+    ctx.answerCallbackQuery();
+    await ctx.conversation.enter('register');
+  });
+  pm.callbackQuery('/unregister', async (ctx: BotContext) => {
+    //if (ctx.update.callback_query?.message?.message_id) await bot.api.deleteMessage(ctx.chat.id, ctx.update.callback_query.message.message_id);
+    ctx.answerCallbackQuery();
+    await ctx.conversation.enter('unregister');
+  });
   pm.command('menu', (ctx: BotContext) => pmInlineKeyboard(ctx));
-  pm.command('help', (ctx: BotContext) => ctx.reply(ctx.t('help', { locales: Object.keys(locales).join('|') })));
-  pm.command('exit', async (ctx: BotContext) => (await ctx.conversation.exit()));
+  pm.command('help', (ctx: BotContext) => showHelp(ctx));
+  pm.command('exit', async (ctx: BotContext) => {
+    await ctx.conversation.exit();
+    ctx.deleteMessage();
+  });
+  pm.command('add', async (ctx: BotContext) => (await ctx.conversation.enter('add')));
+  pm.command('tasks', async (ctx: BotContext) => (await ctx.conversation.enter('tasks')));
   pm.command('register', async (ctx: BotContext) => (await ctx.conversation.enter('register')));
   pm.command('unregister', async (ctx: BotContext) => (await ctx.conversation.enter('unregister')));
   pm.command('update', async (ctx: BotContext) => (await ctx.conversation.enter('update')));
@@ -343,41 +434,44 @@ export const initBot = async () => {
       const { data, error } = await supabaseClient.from('chats').select('*').eq('id', chat_id);
       const chat = data && data[0];
       if (DEBUG) console.log('action:', action, '/start chat:', chat);
-      if (action==='register' && (chat?.creator == ctx.session.user.id || [].concat(chat?.admins,chat?.members).includes(ctx.session.user.id))) {
-        // start register conversation
-        ctx.session.data = { chat };
+      ctx.session.data = { chat };
+      if (['add','tasks','unregister','register'].includes(action) && (chat?.creator === ctx.session.user.id || [].concat(chat?.admins,chat?.members).includes(ctx.session.user.id))) {
+        // start conversation
         await ctx.conversation.enter(action);
-      } else if (action==='update' && (chat?.creator == ctx.session.user.id || chat?.admins.includes(ctx.session.user.id))) {
+      } else if (action==='update' && (chat?.creator === ctx.session.user.id || chat?.admins.includes(ctx.session.user.id))) {
         // start update conversation
-        ctx.session.data = { chat };
         await ctx.conversation.enter(action);
-      } else if (action==='register' && chat) {
-        ctx.reply(ctx.t('member', { chat_title: chat.title, chat_id: String(chat.id) }));
+      } else if (action==='register' && chat?.id) {
+        await ctx.reply(ctx.t('member', { chat_title: chat.title, chat_id: String(chat.id) }));
       } else {
-        ctx.reply(ctx.t('start'));
+        await pmInlineKeyboard(ctx, chat.invite);
       }
     } else {
       ctx.reply(ctx.t('start'));
+      await ctx.deleteMessage();
     }
   });
   pm.command('lang', async (ctx: BotContext) => {
     if (!!!ctx.session.user?.id || Number(ctx.chat.id)<1) return;
     const lang: Lang = ctx.match.trim().toLowerCase();
     if (!!lang) await setLocale(ctx, lang);
-    ctx.reply(ctx.t('start'));
+    await ctx.reply(ctx.t('start'));
+    ctx.deleteMessage();
   });
-  pm.command('ping', (ctx: BotContext) => {
-    ctx.reply(`Pong!
+  pm.command('ping', async (ctx: BotContext) => {
+    await ctx.reply(`Pong!
     ${new Date()}
     ${Date.now()}
     `);
+    ctx.deleteMessage();
   });
 
   pm.hears(/files*(.+)?/, async (ctx: BotContext, dir = 'content') => {
-    if (ADMIN_IDS.includes(ctx.msg.from.id)) {
+    if (ADMIN_IDS.includes(ctx.from.id)) {
       const [cmd, dir] = ctx.match;
       const { files, error } = await getFiles(dir && dir.trim().toLowerCase());
-      ctx.reply(`${JSON.stringify(files,null,2)}`);
+      await ctx.reply(`${JSON.stringify(files,null,2)}`);
+      ctx.deleteMessage();
     }
   });
 
@@ -390,14 +484,15 @@ export const initBot = async () => {
     }
   });
 
-  pm.on('message:text', (ctx: BotContext) => {
-    ctx.reply(ctx.t('start'));
+  pm.on('message:text', async (ctx: BotContext) => {
+    await ctx.reply(ctx.t('start'));
     if (ADMIN_IDS.includes(ctx.session?.user?.id)) {
-      ctx.reply(`${JSON.stringify(ctx.session,null,2)}`);
+      await ctx.reply(`${JSON.stringify(ctx.session,null,2)}`);
     }
+    ctx.deleteMessage();
   });
-  pm.on('message:photo', (ctx: BotContext) => ctx.reply(ctx.t('start')));
-  pm.on('edited_message', (ctx: BotContext) => ctx.reply('Ha! Gotcha! You just edited this!', { reply_to_message_id: ctx.editedMessage.message_id }));
+  //pm.on('message:photo', (ctx: BotContext) => ctx.reply(ctx.t('start')));
+  //pm.on('edited_message', (ctx: BotContext) => ctx.reply('Ha! Gotcha! You just edited this!', { reply_to_message_id: ctx.editedMessage.message_id }));
 
   notifyAdmins();
 

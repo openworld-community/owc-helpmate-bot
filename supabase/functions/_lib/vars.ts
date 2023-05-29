@@ -5,6 +5,7 @@ const DENO_ENV = Deno.env.toObject(); // DENO_ENV.DENO_DEPLOYMENT_ID // DENO_ENV
 const LOADED_ENV = (typeof load !== 'undefined' && !!!DENO_ENV.DENO_DEPLOYMENT_ID) ? { DEBUG: true, ...(await load()) } : { DEBUG: false };
 const ENV = Object.assign(DENO_ENV, LOADED_ENV);
 
+ENV.SAVE_UPDATES = !!ENV.SAVE_UPDATES;
 ENV.ADMIN_IDS = !!ENV.TELEGRAM_BOT_ADMINS ? ENV.TELEGRAM_BOT_ADMINS.split(',').map(el=>Number(el.trim())) : [];
 ENV.BOT_SESSIONS_TABLE = 'bot_sessions';
 
