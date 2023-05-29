@@ -1,4 +1,5 @@
 import { serve } from 'http/server';
+import { supabaseClient } from '$lib/supabase.ts';
 
 import ENV from '$lib/vars.ts';
 const { DEBUG, APP_NAME, SMTP_NOTIFY, CRON_SECRET, ADMIN_IDS, TELEGRAM_BOT_SEND_MESSAGE } = ENV;
@@ -34,7 +35,13 @@ try {
           return new Response('405 Not allowed', { status: 405 });
         }
         const name = url.searchParams.get('name') || '';
-        const text = `Cronjob '${name}' is done at ${new Date}`;
+        const now = new Date;
+        const { data, error } = await supabaseClient.from('tasks').update({ updated_at: now, status: 'expired' }).lte('expiry_date', now).select();
+        const text = `
+        Cronjob '${name}' is done at ${now}
+        expired tasks:
+        ${data ? JSON.stringify(data) : 'none'}
+        `;
         const results = await notifyAdmins(text);
         return new Response(JSON.stringify(results,null,2), { status: 200, headers: { 'Content-Type': 'application/json' }})
       } catch (err) {
