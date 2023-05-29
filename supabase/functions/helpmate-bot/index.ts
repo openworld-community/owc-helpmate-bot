@@ -9,6 +9,8 @@ console.info(`Bot "${APP_NAME}" up and running!`);
 try {
   const { bot, run, handleUpdate } = await initBot();
 
+  const stopRunner = () => globalThis.runner?.isRunning() ? globalThis.runner.stop() : bot.stop();
+
   if (!!TELEGRAM_BOT_SECRET) {
     serve(async (req) => {
       try {
@@ -24,10 +26,10 @@ try {
     });
   } else {
     if (DEBUG) console.log(`Bot started.`);
-    //bot.start();
-    const handle = run(bot);
+    globalThis.runner = run(bot) || bot.start();
   }
 
 } catch (err) {
   console.error(err);
+  stopRunner();
 }
