@@ -48,13 +48,24 @@ const keyboardMarkup: ReplyKeyboardMarkup = makeKeyboardMarkup([[keyboardButton]
 const makeInlineKeyboard = (inlineButtons: InlineButton[]): InlineKeyboard => {
   const inlineKeyboard = new InlineKeyboard();
   inlineButtons.forEach(el => {
-    inlineKeyboard[el.type](el.label, el.action);
+    if (el.type in inlineKeyboard) inlineKeyboard[el.type](el.label, el.action);
     if (el.row) inlineKeyboard.row();
   });
   return inlineKeyboard;
 };
 
-const showInlineKeyboard = async (ctx: BotContext): Promise<void> => {
+const chatInlineKeyboard = async (ctx: BotContext, action: string = 'update', deleteMessage: boolean = false): Promise<void> => {
+  const webURL = `https://t.me/${TELEGRAM_BOT_NAME}?start=${action}_${ctx.chat.id}`
+  const inlineButtons: InlineButton[] = [
+    //{ type: 'text', label: ctx.t('exit'), action: '/exit' },
+    { type: 'url', label: ctx.t(action), action: webURL },
+  ];
+  const inlineKeyboard = makeInlineKeyboard(inlineButtons);
+  await ctx.reply(ctx.t('button'), { reply_markup: inlineKeyboard, reply_to_message_id: ctx.msg.message_id });
+  if (deleteMessage && ctx.msg?.message_id) await bot.api.deleteMessage(ctx.chat.id, ctx.msg.message_id);
+};
+
+const pmInlineKeyboard = async (ctx: BotContext, deleteMessage: boolean = false): Promise<void> => {
   const user: UserData = ctx.session.user;
   if (!!!user?.id) return;
 
@@ -63,7 +74,6 @@ const showInlineKeyboard = async (ctx: BotContext): Promise<void> => {
   const webURL = DEBUG ? `http://127.0.0.1:3003/${webQry}` : webApp;
 
   const inlineButtons: InlineButton[] = [
-    //{ type: 'text', label: ctx.t('exit'), action: 'exit' },
     { type: 'webApp', label: ctx.t('webapp'), action: `${webApp}&mode=app` },
     { type: 'url', label: ctx.t('website'), action: webURL },
   ];
@@ -72,6 +82,7 @@ const showInlineKeyboard = async (ctx: BotContext): Promise<void> => {
 
   //await ctx.reply('Hello!', { reply_markup: removeKeyboardMarkup() });
   await ctx.reply(ctx.t('menu'), { reply_markup: inlineKeyboard });
+  if (deleteMessage && ctx.msg?.message_id) await bot.api.deleteMessage(ctx.chat.id, ctx.msg.message_id);
 };
 
 export const uploadBotFile = async (ctx: BotContext): Promise<void> => {
@@ -233,7 +244,7 @@ const updateChat = async (conversation: BotConversation, ctx: BotContext): Promi
     ctx.session.data = {};
     if (!error && data.length>0)
       await ctx.reply('Chat info updated!');
-    else 
+    else
       await ctx.reply('Error updating chat info!');
   } else {
     await ctx.reply('Bye!');
@@ -298,22 +309,24 @@ export const initBot = async () => {
   });
   // replying /reg command in
   bot.command('reg', async (ctx: BotContext) => {
-    if (ctx.chat.id!==ctx.from.id)
-      ctx.reply(ctx.t('reg', { bot_name: TELEGRAM_BOT_NAME, chat_id: String(ctx.chat.id) }), { reply_to_message_id: ctx.msg.message_id });
-    else
+    if (ctx.chat.id!==ctx.from.id) {
+      //await ctx.reply(ctx.t('reg', { bot_name: TELEGRAM_BOT_NAME, chat_id: String(ctx.chat.id) }), { reply_to_message_id: ctx.msg.message_id });
+      //if (ctx.msg?.message_id) await bot.api.deleteMessage(ctx.chat.id, ctx.msg.message_id);
+      await chatInlineKeyboard(ctx, 'register');
+    } else
       await ctx.conversation.enter('register');
   });
   // replying /upd command in
   bot.command('upd', async (ctx: BotContext) => {
-    if (ctx.chat.id!==ctx.from.id)
-      ctx.reply(ctx.t('upd', { bot_name: TELEGRAM_BOT_NAME, chat_id: String(ctx.chat.id) }), { reply_to_message_id: ctx.msg.message_id });
-    else
+    if (ctx.chat.id!==ctx.from.id) {
+      await chatInlineKeyboard(ctx, 'update');
+    } else
       await ctx.conversation.enter('update');
   });
 
   // Only handle commands in private chats.
   const pm = bot.chatType('private');
-  pm.command('menu', (ctx: BotContext) => showInlineKeyboard(ctx));
+  pm.command('menu', (ctx: BotContext) => pmInlineKeyboard(ctx));
   pm.command('help', (ctx: BotContext) => ctx.reply(ctx.t('help', { locales: Object.keys(locales).join('|') })));
   pm.command('exit', async (ctx: BotContext) => (await ctx.conversation.exit()));
   pm.command('register', async (ctx: BotContext) => (await ctx.conversation.enter('register')));

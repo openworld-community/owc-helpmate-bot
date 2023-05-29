@@ -129,18 +129,24 @@ export const syncChat = async (ctx: Context, chat: Chat, chat_member?: MemberDat
 };
 
 export const saveUpdate = async (ctx: Context): Promise<Update> => {
+  const message = ctx.update.message ? {
+    message_id: ctx.update.message.message_id,
+    from: ctx.update.message.from,
+    chat: ctx.update.message.chat,
+    date: ctx.update.message.date,
+    text: ctx.update.message.text,
+    entities: ctx.update.message.entities,
+  } : (ctx.update.callback_query?.id ? {
+    callback_query_id: ctx.update.callback_query.id,
+    from: ctx.update.callback_query.from,
+    chat_instance: ctx.update.callback_query.chat_instance,
+    text: ctx.update.callback_query.data,
+  } : null);
   const update: Update = {
     id: ctx.update.update_id,
     from_id: ctx.from.id,
     chat_id: (ctx.from.id !== ctx.chat.id) ? ctx.chat.id : null,
-    message: {
-      message_id: ctx.update.message.message_id,
-      from: ctx.update.message.from,
-      chat: ctx.update.message.chat,
-      date: ctx.update.message.date,
-      text: ctx.update.message.text,
-      entities: ctx.update.message.entities,
-    }
+    message
   };
   const insert = await supabaseClient.from('updates').insert(update).select();
   return update;
