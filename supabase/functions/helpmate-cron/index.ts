@@ -36,7 +36,7 @@ try {
         }
         const name: string = url.searchParams.get('name') || '';
         const now: Date = new Date;
-        const { data, error } = await supabaseClient.from('tasks').update({ updated_at: now, status: 'expired' }).lte('expiry_date', now.toISOString()).select();
+        const { data, error } = await supabaseClient.from('tasks').update({ updated_at: now, status: 'expired' }).lte('expiry_date', now.toISOString()).eq('status', 'open').select();
         const text = `
         Cronjob '${name}' is done at ${now}
         expired tasks:
