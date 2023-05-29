@@ -34,9 +34,9 @@ try {
         if (url.searchParams.get('secret') !== CRON_SECRET) {
           return new Response('405 Not allowed', { status: 405 });
         }
-        const name = url.searchParams.get('name') || '';
-        const now = new Date;
-        const { data, error } = await supabaseClient.from('tasks').update({ updated_at: now, status: 'expired' }).lte('expiry_date', now).select();
+        const name: string = url.searchParams.get('name') || '';
+        const now: Date = new Date;
+        const { data, error } = await supabaseClient.from('tasks').update({ updated_at: now, status: 'expired' }).lte('expiry_date', now.toISOString()).select();
         const text = `
         Cronjob '${name}' is done at ${now}
         expired tasks:
