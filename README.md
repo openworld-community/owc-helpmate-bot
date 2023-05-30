@@ -16,6 +16,10 @@ supabase secrets set --env-file ./.env
 
 supabase secrets list
 
+supabase secrets unset SUPABASE_DB_URL
+
+supabase start
+
 # open link:
 
 https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook?url=https://cxopfnqvgblflivwrubv.functions.supabase.co/helpmate-bot?secret=cxopfnqvgblflivwrubv
