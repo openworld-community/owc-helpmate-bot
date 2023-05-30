@@ -89,6 +89,7 @@ const pmInlineKeyboard = async (ctx: BotContext, inviteLink?: string): Promise<v
 
   const inlineButtons: InlineButton[] = !!ctx.session.user?.helper_in ? [
     { type: 'text', label: ctx.t('tasks'), action: '/tasks', row: true },
+    { type: 'text', label: ctx.t('tasks_helper'), action: '/tasks helper', row: true },
     { type: 'text', label: ctx.t('unregister'), action: '/unregister', row: true },
   ] : [
     { type: 'text', label: ctx.t('add'), action: '/add' },
@@ -116,13 +117,12 @@ const helpInlineKeyboard = async (ctx: BotContext, showLangs: boolean = false): 
   await ctx.deleteMessage();
 };
 
-const exitInlineKeyboard = async (ctx: BotContext, desc: string): Promise<void> => {
-  const inlineButtons: InlineButton[] = [
-    { type: 'text', label: ctx.t('exit'), action: '/exit', row: true },
-  ];
-  const inlineKeyboard = makeInlineKeyboard(inlineButtons);
-  await ctx.reply(desc, { reply_markup: inlineKeyboard });
+const replyInlineButton = async (ctx: BotContext, text: string, label: string, action: string, type: string = 'text', row: boolean = true): Promise<void> => {
+  const inlineButtons: InlineButton[] = [{ type, label, action, row }];
+  await ctx.reply(text, { reply_markup: makeInlineKeyboard(inlineButtons) });
 };
+
+const exitInlineButton = async (ctx: BotContext, text: string): Promise<void> => replyInlineButton(ctx, text, ctx.t('exit'), '/exit');
 
 export const uploadBotFile = async (ctx: BotContext): Promise<void> => {
 	// Prepare the file for download.
@@ -161,212 +161,225 @@ export const uploadBotFile = async (ctx: BotContext): Promise<void> => {
   }
 };
 
-const registerHelper = async (conversation: BotConversation, ctx: BotContext): Promise<void> => {
-  if (DEBUG) console.log('registerHelper ctx.session.user?.id:', ctx.session.user?.id, 'ctx.session.data:', ctx.session.data);
-  const chat = ctx.session.data?.chat;
-  if (CHECK_LOCATION && chat && (chat.country!==ctx.session.user.country || !isMember(chat, ctx.session.user))) {
-    await ctx.reply(ctx.t('member', { chat_title: chat.title, chat_id: String(chat.id) }));
-    await ctx.deleteMessage();
-    return;
-  }
-  if (!!chat?.id && !!!ctx.session.user?.helper_in) {
-    const { data, error } = await supabaseClient.from('helpers').upsert({ id: ctx.session.user.id, chat: chat.id }).select();
-    if (!error && data.length>0) {
-      ctx.session.user.helper_in = chat.id;
-      await pmInlineKeyboard(ctx); // , chat.invite
-    } else {
-      await ctx.reply('Error!');
-      await ctx.deleteMessage();
-    }
-  } else {
-    await ctx.reply('Ha-ha!');
-    await ctx.deleteMessage();
-  }
-};
-
-const unregisterHelper = async (conversation: BotConversation, ctx: BotContext): Promise<void> => {
-  if (DEBUG) console.log('unregisterHelper ctx.session.user?.helper_in:', ctx.session.user?.helper_in, 'ctx.session.data:', ctx.session.data);
-  if (!!ctx.session.user?.helper_in) {
-    const { error } = await supabaseClient.from('helpers').delete().eq('id', ctx.session.user.id);
-    if (!error) {
-      ctx.session.user.helper_in = null;
-      await pmInlineKeyboard(ctx);
-    } else {
-      await ctx.reply('Error!');
-      await ctx.deleteMessage();
-    }
-  } else {
-    await ctx.reply('Ha-ha!');
-    await ctx.deleteMessage();
-  }
-};
-
-const taskList = async (conversation: BotConversation, ctx: BotContext): Promise<void> => {
-  if (DEBUG) console.log('taskList ctx.session.user?.helper_in:', ctx.session.user?.helper_in, 'ctx.session.data:', ctx.session.data);
-  if (!!ctx.session.user?.helper_in) {
-    const now: Date = new Date;
-    const { data, error } = await supabaseClient.from('tasks').select('*').gt('expiry_date', now.toISOString()).eq('chat', ctx.session.user?.helper_in).eq('status', 'open').is('helper', null);
-    await ctx.reply(JSON.stringify(data,null,2));
-    await pmInlineKeyboard(ctx); // , ctx.session.data?.chat?.invite
-  } else {
-    await ctx.reply('Ha-ha!');
-    await ctx.deleteMessage();
-  }
-};
-
-const addTask = async (conversation: BotConversation, ctx: BotContext): Promise<void> => {
-  let done = false;
-  const chat = ctx.session.data?.chat;
-  if (CHECK_LOCATION && chat && (chat.country!==ctx.session.user.country || !isMember(chat, ctx.session.user))) {
-    await ctx.reply(ctx.t('member', { chat_title: chat.title, chat_id: String(chat.id) }));
-    await ctx.deleteMessage();
-    return;
-  }
-  if (chat?.id && ctx.from.id === ctx.session.user.id) {
-    while (!done) {
-      if (DEBUG) console.log('addTask ctx.session.data:', ctx.session.data);
-      await exitInlineKeyboard(ctx, ctx.t('task_description')+"\n "+ctx.t('press_exit'));
-      const convCtx = await conversation.waitFor(':text');
-      if (DEBUG) console.log('convCtx.msg.text:', convCtx.msg.text);
-      if (convCtx.msg.text.startsWith('/exit')) {
-        await ctx.reply(ctx.t('bye'));
-        await convCtx.deleteMessage();
-        return;
-      } else if (convCtx.msg.text.length>3) {
-        const expiry_date = new Date();
-        expiry_date.setDate(expiry_date.getDate() + 1); // plus 1 day
-        const { data, error } = await supabaseClient.from('tasks').upsert({ chat: chat.id, profile: ctx.from.id, description: convCtx.msg.text, expiry_date }).select();
-        if (!error && data?.length>0) {
-          await ctx.reply('Problem added: '+data[0].uid);
-          done = true;
-        } else {
-          await ctx.reply(`Error!`);
-        }
-      } else {
-        await ctx.reply(ctx.t('short_description'));
-      }
-    }
-    await pmInlineKeyboard(ctx);
-  } else {
-    await ctx.reply('Ha-ha!');
-    await ctx.deleteMessage();
-  }
-};
-
-const getCountry = async (conversation: BotConversation, ctx: BotContext): Promise<object | undefined> => {
-  await ctx.reply(ctx.t('request_country'));
-  const convCtx = await conversation.waitFor(':text');
-  if (DEBUG) console.log('convCtx.msg.text:', convCtx.msg.text);
-  if (convCtx.msg.text.startsWith('/exit')) {
-    await ctx.reply(ctx.t('bye'));
-    await convCtx.deleteMessage();
-  } else if (convCtx.msg.text.length===2) {
-    const { data, error } = await supabaseClient.from('countries').select('*').eq('code', convCtx.msg.text.toUpperCase());
-    if (!error && data?.length>0) {
-      await ctx.reply('Country chosen: '+data[0].name);
-      return data[0];
-    }
-  }
-};
-
-const getState = async (conversation: BotConversation, ctx: BotContext, country: number): Promise<object | undefined> => {
-  await ctx.reply(ctx.t('request_state'));
-  const convCtx = await conversation.waitFor(':text');
-  if (DEBUG) console.log('convCtx.msg.text:', convCtx.msg.text);
-  if (convCtx.msg.text.startsWith('/exit')) {
-    await ctx.reply(ctx.t('bye'));
-    await convCtx.deleteMessage();
-  } else if (convCtx.msg.text.length>0 && convCtx.msg.text!=='-') {
-    const { data, error } = await supabaseClient.from('states').select('*').match({ country, 'code': convCtx.msg.text });
-    if (!error && data?.length>0) {
-      await ctx.reply('State chosen: '+data[0].name);
-      return data[0];
-    }
-  }
-};
-
-const getCity = async (conversation: BotConversation, ctx: BotContext, country: number, state?: number): Promise<object | undefined> => {
-  await ctx.reply(ctx.t('request_city'));
-  const convCtx = await conversation.waitFor(':text');
-  if (DEBUG) console.log('convCtx.msg.text:', convCtx.msg.text);
-  if (convCtx.msg.text.startsWith('/exit')) {
-    await ctx.reply(ctx.t('bye'));
-    await convCtx.deleteMessage();
-  } else if (convCtx.msg.text.length>0 && convCtx.msg.text!=='-') {
-    const { data, error } = await supabaseClient.from('cities').select('*').eq('country', country).ilike('name', '%'+convCtx.msg.text+'%');
-    if (!error && data?.length>0) {
-      await ctx.reply('City chosen: '+data[0].name);
-      return data[0];
-    }
-  }
-};
-
-const updateChat = async (conversation: BotConversation, ctx: BotContext): Promise<void> => {
-  if (DEBUG) console.log(ctx.session.data);
-  const chat = ctx.session.data?.chat;
-  if (!chat || (!chat?.admins?.includes(ctx.from.id) && chat?.creator !== ctx.from.id)) {
-    await ctx.reply('Ha-ha!');
-    await ctx.deleteMessage();
-    return;
-  }
-  const chatInfo = {
-    invite: '',
-    country: '',
-    state: '',
-    city: ''
-  };
-
-  await exitInlineKeyboard(ctx, ctx.t('update_start', chat)+"\n "+ctx.t('press_exit'));
-
-  const country = await getCountry(conversation, ctx);
-  if (country?.id) {
-    chat.country = country.id;
-    chatInfo.country = country.name;
-  } else {
-    await ctx.reply(ctx.t('update_country'));
-    return;
-  }
-
-  const state = await getState(conversation, ctx, chat.country);
-  if (state?.id) {
-    chat.state = state.id;
-    chatInfo.state = state.name;
-  }
-
-  const city = await getCity(conversation, ctx, chat.country, chat.state);
-  if (city?.id) {
-    chat.city = city.id;
-    chatInfo.city = city.name;
-  }
-
-  await ctx.reply(`You have added:
-    country: ${chatInfo.country}
-    state: ${chatInfo.state}
-    city: ${chatInfo.city}
-    Send "+" (plus) if this is correct.
-  `);
-  const convCtx = await conversation.waitFor(':text');
-  if (convCtx.msg.text==='+') {
-    const { data, error } = await supabaseClient.from('chats').update({ updated_at: new Date(), ...chat }).eq('id', chat.id).select();
-    if (DEBUG) console.log('updateChat chat update:', update);
-    ctx.session.data = {};
-    if (!error && data.length>0)
-      await ctx.reply('Chat info updated!');
-    else
-      await ctx.reply('Error updating chat info!');
-  } else {
-    await ctx.reply(ctx.t('bye'));
-  }
-  return;
-};
-
 export const initBot = async () => {
   const bot = new Bot<BotContext>(TELEGRAM_BOT_TOKEN);
 
-  const notifyAdmins = (text = `The @${TELEGRAM_BOT_NAME} <b>bot initialized</b>!`, options = { parse_mode: 'HTML' }) => {
-    ADMIN_IDS.forEach(aid => {
-      bot.api.sendMessage(aid, text, options);
-    });
+  const sendMessage = (id: number, text: string, options: object = { parse_mode: 'HTML' }): Promise<void> => bot.api.sendMessage(id, text, options);
+
+  const bulkSendMessage = (ids: number[], text: string, options: object) => ids.forEach(id => sendMessage(id, text, options));
+
+  const sendInlineButton = async (id: number, text: string, label: string, action: string, type: string = 'text', row: boolean = true): Promise<void> => {
+    const inlineButtons: InlineButton[] = [{ type, label, action, row }];
+    await sendMessage(id, text, { reply_markup: makeInlineKeyboard(inlineButtons) });
+  };
+
+  const bulkSendInline = (ids: number[], text: string, label: string, action: string, type: string = 'text', row: boolean = true) => ids.forEach(id => sendInlineButton(id, text, label, action, type, row));
+
+  const sendTaskInline = async (ctx: BotContext, id: number, text: string, task_uid: string): Promise<void> => {
+    const inlineButtons: InlineButton[] = [
+      { type: 'text', label: ctx.t('task_accept'), action: '/task accept '+task_uid },
+      { type: 'text', label: ctx.t('task_bad'), action: '/task bad '+task_uid },
+    ];
+    const inlineKeyboard = makeInlineKeyboard(inlineButtons);
+    await sendMessage(id, text, { reply_markup: makeInlineKeyboard(inlineButtons) });
+  };
+
+  const bulkSendTaskInline = (ctx: BotContext, ids: number[], text: string, task_uid: string) => ids.forEach(id => sendTaskInline(ctx, id, text, task_uid));
+
+  const registerHelper = async (conversation: BotConversation, ctx: BotContext): Promise<void> => {
+    if (DEBUG) console.log('registerHelper ctx.session.user?.id:', ctx.session.user?.id, 'ctx.session.data:', ctx.session.data);
+    const chat = ctx.session.data?.chat;
+    if (CHECK_LOCATION && chat && (chat.country!==ctx.session.user.country || !isMember(chat, ctx.session.user))) {
+      await ctx.reply(ctx.t('member', { chat_title: chat.title, chat_id: String(chat.id) }));
+      await ctx.deleteMessage();
+      return;
+    }
+    if (!!chat?.id && !!!ctx.session.user?.helper_in) {
+      const { data, error } = await supabaseClient.from('helpers').upsert({ id: ctx.session.user.id, chat: chat.id }).select();
+      if (!error && data.length>0) {
+        ctx.session.user.helper_in = chat.id;
+        //await ctx.answerCallbackQuery({ text: 'You have been added to helpers list', show_alert: true });
+        await pmInlineKeyboard(ctx); // , chat.invite
+      } else {
+        await ctx.reply('Error!');
+        await ctx.deleteMessage();
+      }
+    } else {
+      await ctx.reply('Ha-ha!');
+      await ctx.deleteMessage();
+    }
+  };
+
+  const unregisterHelper = async (conversation: BotConversation, ctx: BotContext): Promise<void> => {
+    if (DEBUG) console.log('unregisterHelper ctx.session.user?.helper_in:', ctx.session.user?.helper_in, 'ctx.session.data:', ctx.session.data);
+    if (!!ctx.session.user?.helper_in) {
+      const { error } = await supabaseClient.from('helpers').delete().eq('id', ctx.session.user.id);
+      if (!error) {
+        ctx.session.user.helper_in = null;
+        //await ctx.answerCallbackQuery({ text: 'You have been removed from helpers list', show_alert: true });
+        await pmInlineKeyboard(ctx);
+      } else {
+        await ctx.reply('Error!');
+        await ctx.deleteMessage();
+      }
+    } else {
+      await ctx.reply('Ha-ha!');
+      await ctx.deleteMessage();
+    }
+  };
+
+  const addTask = async (conversation: BotConversation, ctx: BotContext): Promise<void> => {
+    let done = false;
+    const chat = ctx.session.data?.chat;
+    if (CHECK_LOCATION && chat && (chat.country!==ctx.session.user.country || !isMember(chat, ctx.session.user))) {
+      await ctx.reply(ctx.t('member', { chat_title: chat.title, chat_id: String(chat.id) }));
+      await ctx.deleteMessage();
+      return;
+    }
+    if (chat?.id && ctx.from.id === ctx.session.user.id) {
+      while (!done) {
+        if (DEBUG) console.log('addTask ctx.session.data:', ctx.session.data);
+        await exitInlineButton(ctx, ctx.t('task_description')+"\n "+ctx.t('press_exit'));
+        const convCtx = await conversation.waitFor(':text');
+        if (DEBUG) console.log('convCtx.msg.text:', convCtx.msg.text);
+        if (convCtx.msg.text.startsWith('/')) {
+          await ctx.reply(ctx.t('bye'));
+          await convCtx.deleteMessage();
+          return;
+        } else if (convCtx.msg.text.length>3) {
+          const expiry_date = new Date();
+          expiry_date.setDate(expiry_date.getDate() + 1); // plus 1 day
+          const { data: tasksData, error: tasksError } = await supabaseClient.from('tasks').upsert({ chat: chat.id, profile: ctx.from.id, description: convCtx.msg.text, expiry_date }).select();
+          if (!tasksError && tasksData?.length>0) {
+            const task_uid = tasksData[0].uid;
+            const task_url = ctx.t('task_url', { task_uid, bot_name: TELEGRAM_BOT_NAME });
+            const text = ctx.t('task_created', { chat_title: chat.title })+"\n "+tasksData[0].description;
+            const { data: helpersData, error: helpersError } = await supabaseClient.from('helpers').select('id').eq('chat', chat.id);
+            if (!helpersError && helpersData?.length>0) {
+              if (DEBUG) console.log('addTask helpers:', helpersError, helpersData.map(el=>el.id));
+              bulkSendTaskInline(ctx, helpersData.map(el=>el.id), text, task_uid);
+            }
+            replyInlineButton(ctx, text, ctx.t('task'), '/task info '+task_uid, 'text');
+            done = true;
+          } else {
+            await ctx.reply(ctx.t('error'));
+          }
+        } else {
+          await ctx.reply(ctx.t('short_description'));
+        }
+      }
+      await pmInlineKeyboard(ctx);
+    } else {
+      await ctx.reply('Ha-ha!');
+      await ctx.deleteMessage();
+    }
+  };
+
+  const getCountry = async (conversation: BotConversation, ctx: BotContext): Promise<object | undefined> => {
+    await ctx.reply(ctx.t('request_country'));
+    const convCtx = await conversation.waitFor(':text');
+    if (DEBUG) console.log('convCtx.msg.text:', convCtx.msg.text);
+    if (convCtx.msg.text.startsWith('/exit')) {
+      await ctx.reply(ctx.t('bye'));
+      await convCtx.deleteMessage();
+    } else if (convCtx.msg.text.length===2) {
+      const { data, error } = await supabaseClient.from('countries').select('*').eq('code', convCtx.msg.text.toUpperCase());
+      if (!error && data?.length>0) {
+        await ctx.reply('Country chosen: '+data[0].name);
+        return data[0];
+      }
+    }
+  };
+
+  const getState = async (conversation: BotConversation, ctx: BotContext, country: number): Promise<object | undefined> => {
+    await ctx.reply(ctx.t('request_state'));
+    const convCtx = await conversation.waitFor(':text');
+    if (DEBUG) console.log('convCtx.msg.text:', convCtx.msg.text);
+    if (convCtx.msg.text.startsWith('/exit')) {
+      await ctx.reply(ctx.t('bye'));
+      await convCtx.deleteMessage();
+    } else if (convCtx.msg.text.length>0 && convCtx.msg.text!=='-') {
+      const { data, error } = await supabaseClient.from('states').select('*').match({ country, 'code': convCtx.msg.text });
+      if (!error && data?.length>0) {
+        await ctx.reply('State chosen: '+data[0].name);
+        return data[0];
+      }
+    }
+  };
+
+  const getCity = async (conversation: BotConversation, ctx: BotContext, country: number, state?: number): Promise<object | undefined> => {
+    await ctx.reply(ctx.t('request_city'));
+    const convCtx = await conversation.waitFor(':text');
+    if (DEBUG) console.log('convCtx.msg.text:', convCtx.msg.text);
+    if (convCtx.msg.text.startsWith('/exit')) {
+      await ctx.reply(ctx.t('bye'));
+      await convCtx.deleteMessage();
+    } else if (convCtx.msg.text.length>0 && convCtx.msg.text!=='-') {
+      const { data, error } = await supabaseClient.from('cities').select('*').eq('country', country).ilike('name', '%'+convCtx.msg.text+'%');
+      if (!error && data?.length>0) {
+        await ctx.reply('City chosen: '+data[0].name);
+        return data[0];
+      }
+    }
+  };
+
+  const updateChat = async (conversation: BotConversation, ctx: BotContext): Promise<void> => {
+    if (DEBUG) console.log(ctx.session.data);
+    const chat = ctx.session.data?.chat;
+    if (!chat || (!chat?.admins?.includes(ctx.from.id) && chat?.creator !== ctx.from.id)) {
+      await ctx.reply('Ha-ha!');
+      await ctx.deleteMessage();
+      return;
+    }
+    const chatInfo = {
+      invite: '',
+      country: '',
+      state: '',
+      city: ''
+    };
+
+    await exitInlineButton(ctx, ctx.t('update_start', chat)+"\n "+ctx.t('press_exit'));
+
+    const country = await getCountry(conversation, ctx);
+    if (country?.id) {
+      chat.country = country.id;
+      chatInfo.country = country.name;
+    } else {
+      await ctx.reply(ctx.t('update_country'));
+      return;
+    }
+
+    const state = await getState(conversation, ctx, chat.country);
+    if (state?.id) {
+      chat.state = state.id;
+      chatInfo.state = state.name;
+    }
+
+    const city = await getCity(conversation, ctx, chat.country, chat.state);
+    if (city?.id) {
+      chat.city = city.id;
+      chatInfo.city = city.name;
+    }
+
+    await ctx.reply(`You have added:
+      country: ${chatInfo.country}
+      state: ${chatInfo.state}
+      city: ${chatInfo.city}
+      Send "+" (plus) if this is correct.
+    `);
+    const convCtx = await conversation.waitFor(':text');
+    if (convCtx.msg.text==='+') {
+      const { data, error } = await supabaseClient.from('chats').update({ updated_at: new Date(), ...chat }).eq('id', chat.id).select();
+      if (DEBUG) console.log('updateChat chat update:', update);
+      ctx.session.data = {};
+      if (!error && data.length>0)
+        await ctx.reply('Chat info updated!');
+      else
+        await ctx.reply('Error updating chat info!');
+    } else {
+      await ctx.reply(ctx.t('bye'));
+    }
+    return;
   };
 
   bot.catch((err) => {
@@ -404,7 +417,6 @@ export const initBot = async () => {
   bot.use(limit());
 
   bot.use(conversations());
-  bot.use(createConversation(taskList, 'tasks'));
   bot.use(createConversation(addTask, 'add'));
   bot.use(createConversation(registerHelper, 'register'));
   bot.use(createConversation(unregisterHelper, 'unregister'));
@@ -414,68 +426,127 @@ export const initBot = async () => {
   // Only handle commands in private chats.
   const pm = bot.chatType('private');
   pm.callbackQuery('/add', async (ctx: BotContext) => {
-    //if (ctx.callbackQuery?.message?.message_id) await bot.api.deleteMessage(ctx.chat.id, ctx.callbackQuery.message.message_id);
     ctx.answerCallbackQuery();
     await ctx.conversation.enter('add');
   });
-  pm.callbackQuery('/tasks', async (ctx: BotContext) => {
-    //if (ctx.callbackQuery?.message?.message_id) await bot.api.deleteMessage(ctx.chat.id, ctx.callbackQuery.message.message_id);
-    ctx.answerCallbackQuery();
-    await ctx.conversation.enter('tasks');
-  });
   pm.callbackQuery('/register', async (ctx: BotContext) => {
-    //if (ctx.callbackQuery?.message?.message_id) await bot.api.deleteMessage(ctx.chat.id, ctx.callbackQuery.message.message_id);
     ctx.answerCallbackQuery();
     await ctx.conversation.enter('register');
   });
   pm.callbackQuery('/unregister', async (ctx: BotContext) => {
-    //if (ctx.callbackQuery?.message?.message_id) await bot.api.deleteMessage(ctx.chat.id, ctx.callbackQuery.message.message_id);
     ctx.answerCallbackQuery();
     await ctx.conversation.enter('unregister');
   });
   pm.callbackQuery('/unregister', async (ctx: BotContext) => {
-    //if (ctx.callbackQuery?.message?.message_id) await bot.api.deleteMessage(ctx.chat.id, ctx.callbackQuery.message.message_id);
     ctx.answerCallbackQuery();
     await ctx.conversation.enter('unregister');
   });
   pm.callbackQuery('/menu', (ctx: BotContext) => helpInlineKeyboard(ctx, true));
   pm.callbackQuery('/start', (ctx: BotContext) => pmInlineKeyboard(ctx));
+
   pm.command('start', async (ctx: BotContext) => {
     const cmd = ctx.match.trim().toLowerCase();
     const cmds = cmd.split('_').filter(el=>!!el);
     if (DEBUG) console.log('/start cmds:', cmds);
     if (cmds.length>1) {
-      // check membership
       const action = cmds[0].trim();
-      const chat_id = Number(cmds[1].trim());
-      const { data, error } = await supabaseClient.from('chats').select('*').eq('id', chat_id);
-      const chat = data && data[0];
-      if (DEBUG) console.log('action:', action, '/start chat:', chat);
-      ctx.session.data = { chat };
-      if (action==='bot') {
-        await pmInlineKeyboard(ctx, chat.invite);
-      } else if (['add','tasks','unregister','register'].includes(action) && isMember(chat, ctx.session.user)) {
+      const action_id = cmds[1].trim();
+      if (isNumeric(action_id)) {
+        const { data, error } = await supabaseClient.from('chats').select('*').eq('id', Number(action_id));
+        const chat = data && data[0];
+        if (DEBUG) console.log('action:', action, '/start chat:', chat);
+        ctx.session.data = { chat };
+        if (action==='bot') {
+          await pmInlineKeyboard(ctx, chat?.invite);
+        } else if (['add','tasks','unregister','register'].includes(action) && isMember(chat, ctx.session.user)) {
+          await ctx.deleteMessage();
+          await ctx.conversation.enter(action);
+        } else if (action==='update' && isMember(chat, ctx.session.user, true)) {
+          await ctx.deleteMessage();
+          await ctx.conversation.enter(action);
+        } else if (action==='update' && chat?.id) {
+          await ctx.reply(ctx.t('member', { chat_title: chat.title, chat_id: String(chat.id) }));
+          await ctx.deleteMessage();
+        } else {
+          await pmInlineKeyboard(ctx, chat.invite);
+        }
+      } else if (action==='task') {
+        const { data, error } = await supabaseClient.from('tasks').select('*').eq('uid', String(action_id));
+        const task = data && data[0];
+        if (DEBUG) console.log('action:', action, '/start task:', task);
+        ctx.reply(JSON.stringify(task,null,2));
         await ctx.deleteMessage();
-        await ctx.conversation.enter(action);
-      } else if (action==='update' && isMember(chat, ctx.session.user, true)) {
-        await ctx.deleteMessage();
-        await ctx.conversation.enter(action);
-      } else if (action==='update' && chat?.id) {
-        await ctx.reply(ctx.t('member', { chat_title: chat.title, chat_id: String(chat.id) }));
-        await ctx.deleteMessage();
-      } else {
-        await pmInlineKeyboard(ctx, chat.invite);
       }
     } else {
       await pmInlineKeyboard(ctx);
     }
   });
+
   pm.command('ping', async (ctx: BotContext) => {
-    await ctx.reply(`Pong!
+    await sendMessage(ctx.from.id, `Pong!
     ${new Date()}
     ${Date.now()}
     `);
     ctx.deleteMessage();
+  });
+
+  pm.on('callback_query:data', async (ctx) => {
+    console.log('Event with ctx.callbackQuery:', ctx.callbackQuery, ctx.from);
+    const match = ctx.callbackQuery.data.split(' ');
+    if (match.length>1 && match[0]=='/lang') {
+      const lang: Lang = match[1].trim().toLowerCase();
+      if (!!lang) await setLocale(ctx, lang);
+      await ctx.answerCallbackQuery(); // remove loading animation
+      await helpInlineKeyboard(ctx, true);
+    } else if (match.length>1 && match[0]=='/task') {
+      const action = match[1].trim();
+      const task_uid = match[2].trim();
+      const { data, error } = await supabaseClient.from('tasks').select('*').eq('uid', task_uid); // .eq('status', 'open').is('helper', null)
+      if (!error && data?.length>0) {
+        const task = data[0];
+        if (action==='accept') {
+          task.helper = ctx.from.id;
+          task.status = 'open';
+          const update = await supabaseClient.from('tasks').update({ updated_at: new Date(), ...task }).eq('uid', task_uid).select();
+          if (!update.error) {
+            sendInlineButton(task.profile, 'Your task is accepted by a helper', ctx.t('task'), '/task info '+task_uid);
+            await ctx.answerCallbackQuery({ text: 'You have accepted to be the task performer', show_alert: true });
+            await ctx.deleteMessage();
+          } else {
+            ctx.answerCallbackQuery({ text: ctx.t('error'), show_alert: true });
+          }
+        } else if (action==='bad') {
+          task.helper = ctx.from.id;
+          task.status = 'bad';
+          const update = await supabaseClient.from('tasks').update({ updated_at: new Date(), ...task }).eq('uid', task_uid).select();
+          if (!update.error) {
+            sendInlineButton(task.profile, 'Your task is marked as bad', ctx.t('task'), '/task info '+task_uid);
+            await ctx.answerCallbackQuery({ text: 'You have marked the task as bad', show_alert: true });
+            //await ctx.deleteMessage();
+          } else {
+            ctx.answerCallbackQuery({ text: ctx.t('error'), show_alert: true });
+          }
+        } else {
+          ctx.answerCallbackQuery({ text: `Created at: ${task.created_at} \nStatus: ${task.status} \nDescription: \n${task.description}`, show_alert: true });
+        }
+      } else {
+        ctx.answerCallbackQuery();
+      }
+    } else if (match.length>0 && match[0]=='/tasks' && !!ctx.session.user?.helper_in) {
+      await ctx.answerCallbackQuery();
+      let tasks;
+      const now: Date = new Date;
+      const action = match.length>1 && match[1].trim();
+      if (action==='helper') {
+        tasks = await supabaseClient.from('tasks').select('*').gt('expiry_date', now.toISOString()).eq('status', 'open').eq('helper', ctx.from.id);
+      } else {
+        tasks = await supabaseClient.from('tasks').select('*').gt('expiry_date', now.toISOString()).eq('status', 'open').eq('chat', ctx.session.user?.helper_in).is('helper', null);
+      }
+      await ctx.reply(JSON.stringify(tasks?.data?.map(el=>el.uid),null,2));
+      //ctx.deleteMessage();
+    } else {
+      ctx.answerCallbackQuery();
+    }
   });
 
   pm.hears(/files*(.+)?/, async (ctx: BotContext, dir = 'content') => {
@@ -510,7 +581,7 @@ export const initBot = async () => {
     if (ctx.chat.id!==ctx.from.id) {
       await chatInlineKeyboard(ctx, ['bot']); // ctx.session.user?.helper_in === ctx.chat.id ? ['tasks', 'unregister'] : ['add', 'register']
     } else {
-      await helpInlineKeyboard(ctx, true); // , ctx.session.data?.chat?.invite
+      await helpInlineKeyboard(ctx, true);
     }
   });
   // replying /menu command in
@@ -518,7 +589,7 @@ export const initBot = async () => {
     if (ctx.chat.id!==ctx.from.id) {
       await chatInlineKeyboard(ctx, ['bot']); // ctx.session.user?.helper_in === ctx.chat.id ? ['tasks', 'unregister'] : ['add', 'register']
     } else {
-      await pmInlineKeyboard(ctx); // , ctx.session.data?.chat?.invite
+      await pmInlineKeyboard(ctx);
     }
   });
   // replying /upd command in
@@ -534,6 +605,7 @@ export const initBot = async () => {
       await ctx.conversation.enter('update');
     }
   });
+
   // Exit conversations when the inline keyboard's `exit` button is pressed.
   bot.callbackQuery('/exit', async (ctx) => {
     await ctx.conversation.exit();
@@ -541,18 +613,8 @@ export const initBot = async () => {
     await pmInlineKeyboard(ctx);
     if (DEBUG) console.log('callbackQuery /exit');
   });
-  bot.on('callback_query:data', async (ctx) => {
-    console.log('Unknown button event with ctx.callbackQuery:', ctx.callbackQuery);
-    await ctx.answerCallbackQuery(); // remove loading animation
-    const match = ctx.callbackQuery.data.split(' ');
-    if (match.length>1 && match[0]=='/lang') {
-      const lang: Lang = match[1].trim().toLowerCase();
-      if (!!lang) await setLocale(ctx, lang);
-    }
-    await helpInlineKeyboard(ctx, true);
-  });
 
-  notifyAdmins();
+  bulkSendMessage(ADMIN_IDS, `The @${TELEGRAM_BOT_NAME} <b>bot initialized</b>!`);
 
   return {
     bot,
@@ -560,6 +622,16 @@ export const initBot = async () => {
     handleUpdate: webhookCallback(bot, 'std/http'),
   };
 };
+
+
+/*
+reply_markup: {
+    inline_keyboard: [[{
+        text: 'Share with your friends',
+        switch_inline_query: 'share'
+    }]]
+}
+*/
 
 /*
 

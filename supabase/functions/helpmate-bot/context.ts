@@ -215,15 +215,3 @@ export type FileContext = FileFlavor<Context> & FileApiFlavor<Api>;
 export type SessionContext = SessionFlavor<Session> & FluentContextFlavor;
 export type BotContext = HydrateContext & FileContext & SessionContext & ChatMembersFlavor & ConversationFlavor;
 export type BotConversation = Conversation<BotContext>;
-
-/*
-me: {
-   id: ,
-   is_bot: true,
-   first_name: "",
-   username: "",
-   can_join_groups: true,
-   can_read_all_group_messages: false,
-   supports_inline_queries: false
-},
-*/
