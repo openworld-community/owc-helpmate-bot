@@ -166,7 +166,7 @@ export const saveUpdate = async (ctx: Context): Promise<Update> => {
 export const SessionInit = (): Session => {
   return {
     uid: toUUID(uid.stamp(32)), // uid.parseStamp(fromUUID(uidWithTimestamp))
-    data: {},
+    data: undefined,
   };
 };
 
@@ -192,10 +192,11 @@ export const SessionSave = async (ctx: Context, next: NextFunction): Promise<voi
   };
   if (DEBUG) console.log('SessionSave user:', user);
 
-  ctx.session.user = await syncProfile(ctx, user);
+
   if (ctx.from.id !== ctx.chat.id) {
     ctx.session.chat = await syncChat(ctx, chat, chat_member);
   }
+  ctx.session.user = await syncProfile(ctx, user);
 
   if (SAVE_UPDATES) {
     const update: Update = await saveUpdate(ctx);
@@ -203,7 +204,7 @@ export const SessionSave = async (ctx: Context, next: NextFunction): Promise<voi
 
   if (isOkCommand(ctx) || isPrivateChat(ctx) || isCallbackQuery(ctx)) {
     await next(); // proccess updates
-  } else if (isChatBotCommand(ctx)) { 
+  } else if (isChatBotCommand(ctx)) {
     await ctx.deleteMessage();
   }
 };
