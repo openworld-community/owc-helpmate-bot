@@ -14,7 +14,7 @@ create table public.profiles (
   last_name VARCHAR NULL DEFAULT ''::character varying ,
 	username VARCHAR NULL DEFAULT ''::character varying ,
   language_code VARCHAR NULL DEFAULT ''::character varying ,
-  lang VARCHAR NULL DEFAULT ''::character varying ,
+  lang VARCHAR NULL DEFAULT 'en'::character varying ,
   created_at TIMESTAMP WITH TIME ZONE NULL DEFAULT now() ,
   updated_at TIMESTAMP WITH TIME ZONE NULL DEFAULT now() ,
   CONSTRAINT profiles_pkey PRIMARY KEY (id),

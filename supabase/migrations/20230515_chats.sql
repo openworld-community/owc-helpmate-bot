@@ -13,7 +13,7 @@ create table public.chats (
   all_members_are_administrators BOOLEAN NULL,
   type VARCHAR NULL DEFAULT 'group'::character varying,
 	title VARCHAR NULL DEFAULT ''::character varying ,
-  lang VARCHAR NULL DEFAULT ''::character varying ,
+  lang VARCHAR NULL DEFAULT 'en'::character varying ,
   invite VARCHAR NULL DEFAULT ''::character varying,
   created_at TIMESTAMP WITH TIME ZONE NULL DEFAULT now() ,
   updated_at TIMESTAMP WITH TIME ZONE NULL DEFAULT now() ,

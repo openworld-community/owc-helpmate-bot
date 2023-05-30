@@ -175,16 +175,23 @@ export const initBot = async () => {
 
   const bulkSendInline = (ids: number[], text: string, label: string, action: string, type: string = 'text', row: boolean = true) => ids.forEach(id => sendInlineButton(id, text, label, action, type, row));
 
-  const sendTaskInline = async (ctx: BotContext, id: number, text: string, task_uid: string): Promise<void> => {
+  const sendTaskInline = (lang: Lang, id: number, text: string, task_uid: string) => {
     const inlineButtons: InlineButton[] = [
-      { type: 'text', label: ctx.t('task_accept'), action: '/task accept '+task_uid },
-      { type: 'text', label: ctx.t('task_bad'), action: '/task bad '+task_uid },
+      { type: 'text', label: locales[lang].task_accept, action: '/task accept '+task_uid, row: true },
+      { type: 'text', label: locales[lang].task_bad, action: '/task bad '+task_uid, row: true },
     ];
     const inlineKeyboard = makeInlineKeyboard(inlineButtons);
-    await sendMessage(id, text, { reply_markup: makeInlineKeyboard(inlineButtons) });
+    sendMessage(id, text, { reply_markup: makeInlineKeyboard(inlineButtons) });
   };
 
-  const bulkSendTaskInline = (ctx: BotContext, ids: number[], text: string, task_uid: string) => ids.forEach(id => sendTaskInline(ctx, id, text, task_uid));
+  const bulkSendTaskInline = (helpers: object[], task: object) => {
+    if (DEBUG) console.log('bulkSendTaskInline helpers:', helpers, 'task:', task);
+    for (let i=0;i<helpers.length;i++) {
+      const lang = helpers[i].profiles.lang || helpers[i].profiles.language_code;
+      const text = locales[lang].task_created.replaceAll('{$chat_title}', helpers[i].chats.title)+"\n "+task.description;
+      sendTaskInline(lang, profilesData[0].id, text, task.uid);
+    }
+  };
 
   const registerHelper = async (conversation: BotConversation, ctx: BotContext): Promise<void> => {
     if (DEBUG) console.log('registerHelper ctx.session.user?.id:', ctx.session.user?.id, 'ctx.session.data:', ctx.session.data);
@@ -252,14 +259,12 @@ export const initBot = async () => {
           const { data: tasksData, error: tasksError } = await supabaseClient.from('tasks').upsert({ chat: chat.id, profile: ctx.from.id, description: convCtx.msg.text, expiry_date }).select();
           if (!tasksError && tasksData?.length>0) {
             const task_uid = tasksData[0].uid;
-            const task_url = ctx.t('task_url', { task_uid, bot_name: TELEGRAM_BOT_NAME });
-            const text = ctx.t('task_created', { chat_title: chat.title })+"\n "+tasksData[0].description;
-            const { data: helpersData, error: helpersError } = await supabaseClient.from('helpers').select('id').eq('chat', chat.id);
+            const { data: helpersData, error: helpersError } = await supabaseClient.from('helpers').select('id, profiles ( lang, language_code ), chats ( title )').eq('chat', chat.id);
             if (!helpersError && helpersData?.length>0) {
               if (DEBUG) console.log('addTask helpers:', helpersError, helpersData.map(el=>el.id));
-              bulkSendTaskInline(ctx, helpersData.map(el=>el.id), text, task_uid);
+              bulkSendTaskInline(helpersData, tasksData[0]);
             }
-            replyInlineButton(ctx, text, ctx.t('task'), '/task info '+task_uid, 'text');
+            await replyInlineButton(ctx, ctx.t('task_created', { chat_title: chat.title })+"\n "+tasksData[0].description, ctx.t('task'), '/task info '+task_uid, 'text');
             done = true;
           } else {
             await ctx.reply(ctx.t('error'));
@@ -491,7 +496,7 @@ export const initBot = async () => {
   });
 
   pm.on('callback_query:data', async (ctx) => {
-    console.log('Event with ctx.callbackQuery:', ctx.callbackQuery, ctx.from);
+    if (DEBUG) console.log('Event with ctx.callbackQuery:', ctx.callbackQuery, ctx.from);
     const match = ctx.callbackQuery.data.split(' ');
     if (match.length>1 && match[0]=='/lang') {
       const lang: Lang = match[1].trim().toLowerCase();
@@ -501,16 +506,18 @@ export const initBot = async () => {
     } else if (match.length>1 && match[0]=='/task') {
       const action = match[1].trim();
       const task_uid = match[2].trim();
-      const { data, error } = await supabaseClient.from('tasks').select('*').eq('uid', task_uid); // .eq('status', 'open').is('helper', null)
+      const { data, error } = await supabaseClient.from('tasks').select('*, profiles ( lang, language_code ), chats ( title )').eq('uid', task_uid); // .eq('status', 'open').is('helper', null)
+      if (DEBUG) console.log('Event with ctx.callbackQuery tasks:', data);
       if (!error && data?.length>0) {
         const task = data[0];
+        const lang: Lang = task.profiles.lang || task.profiles.language_code;
         if (action==='accept') {
           task.helper = ctx.from.id;
           task.status = 'open';
           const update = await supabaseClient.from('tasks').update({ updated_at: new Date(), ...task }).eq('uid', task_uid).select();
           if (!update.error) {
-            sendInlineButton(task.profile, 'Your task is accepted by a helper', ctx.t('task'), '/task info '+task_uid);
-            await ctx.answerCallbackQuery({ text: 'You have accepted to be the task performer', show_alert: true });
+            sendInlineButton(task.profile, locales[lang].task_accepted, locales[lang].task, '/task info '+task_uid);
+            await ctx.answerCallbackQuery({ text: ctx.t('task_performer'), show_alert: true });
             await ctx.deleteMessage();
           } else {
             ctx.answerCallbackQuery({ text: ctx.t('error'), show_alert: true });
@@ -520,9 +527,9 @@ export const initBot = async () => {
           task.status = 'bad';
           const update = await supabaseClient.from('tasks').update({ updated_at: new Date(), ...task }).eq('uid', task_uid).select();
           if (!update.error) {
-            sendInlineButton(task.profile, 'Your task is marked as bad', ctx.t('task'), '/task info '+task_uid);
-            await ctx.answerCallbackQuery({ text: 'You have marked the task as bad', show_alert: true });
-            //await ctx.deleteMessage();
+            sendInlineButton(task.profile, locales[lang].task_marked, locales[lang].task, '/task info '+task_uid);
+            await ctx.answerCallbackQuery({ text: ctx.t('task_marker'), show_alert: true });
+            await ctx.deleteMessage();
           } else {
             ctx.answerCallbackQuery({ text: ctx.t('error'), show_alert: true });
           }

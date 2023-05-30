@@ -8,6 +8,7 @@ create table public.tasks (
   helper BIGINT NULL,
   status VARCHAR NULL DEFAULT 'open'::character varying , -- open bad closed expired
   description TEXT NULL,
+  comments TEXT NULL,
   expiry_date TIMESTAMP WITH TIME ZONE NULL DEFAULT now() ,
   created_at TIMESTAMP WITH TIME ZONE NULL DEFAULT now() ,
   updated_at TIMESTAMP WITH TIME ZONE NULL DEFAULT now() ,

@@ -7,5 +7,6 @@ create table public.helpers (
   created_at TIMESTAMP WITH TIME ZONE NULL DEFAULT now() ,
   updated_at TIMESTAMP WITH TIME ZONE NULL DEFAULT now() ,
   CONSTRAINT helpers_pkey PRIMARY KEY (id),
+  CONSTRAINT helpers_id_fkey FOREIGN KEY (id) REFERENCES public.profiles (id) ON DELETE NO ACTION ON UPDATE NO ACTION,
   CONSTRAINT helpers_chat_fkey FOREIGN KEY (chat) REFERENCES public.chats (id) ON DELETE NO ACTION ON UPDATE NO ACTION
 );
