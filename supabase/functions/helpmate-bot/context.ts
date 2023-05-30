@@ -16,7 +16,9 @@ const uid = new ShortUniqueId({ length: 32 });
 
 const chatBotCommands = ['/help', '/menu', '/upd'];
 
-export const isChatBotCommand = (ctx: Context): boolean => (!!ctx.msg?.entities?.length>0 && String(ctx.msg.entities[0].type)==='bot_command' && chatBotCommands.includes(ctx.msg.text.split('@')[0]));
+export const isOkCommand = (ctx: Context): boolean => chatBotCommands.includes(ctx.msg.text.split('@')[0]);
+
+export const isChatBotCommand = (ctx: Context): boolean => (!!ctx.msg?.entities?.length>0 && String(ctx.msg.entities[0].type)==='bot_command');
 
 export const isPrivateChat = (ctx: Context): boolean => (!!ctx.session?.user?.id && Number(ctx.chat.id)>0);
 
@@ -199,8 +201,10 @@ export const SessionSave = async (ctx: Context, next: NextFunction): Promise<voi
     const update: Update = await saveUpdate(ctx);
   }
 
-  if (isPrivateChat(ctx) || isChatBotCommand(ctx) || isCallbackQuery(ctx)) {
+  if (isOkCommand(ctx) || isPrivateChat(ctx) || isCallbackQuery(ctx)) {
     await next(); // proccess updates
+  } else if (isChatBotCommand(ctx)) { 
+    await ctx.deleteMessage();
   }
 };
 

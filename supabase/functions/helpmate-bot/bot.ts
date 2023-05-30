@@ -45,6 +45,15 @@ const makeKeyboardButton = (qry: string = '', text: string = TELEGRAM_BOT_NAME):
 const keyboardButton: KeyboardButton = makeKeyboardButton();
 const keyboardMarkup: ReplyKeyboardMarkup = makeKeyboardMarkup([[keyboardButton]]);
 
+/*
+const inlineKeyboard = new InlineKeyboard()
+  .text("« 1", "first")
+  .text("‹ 3", "prev")
+  .text("· 4 ·", "stay")
+  .text("5 ›", "next")
+  .text("31 »", "last");
+*/
+
 const makeInlineKeyboard = (inlineButtons: InlineButton[]): InlineKeyboard => {
   const inlineKeyboard = new InlineKeyboard();
   inlineButtons.forEach(el => {
@@ -73,21 +82,31 @@ const pmInlineKeyboard = async (ctx: BotContext, inviteLink?: string): Promise<v
   const webURL = DEBUG ? `http://127.0.0.1:3003/${webQry}` : webApp;
 
   const inlineButtons: InlineButton[] = !!ctx.session.user?.helper_in ? [
-    { type: 'text', label: ctx.t('tasks'), action: '/tasks' },
-    { type: 'text', label: ctx.t('unregister'), action: '/unregister' },
+    { type: 'text', label: ctx.t('tasks'), action: '/tasks', row: true },
+    { type: 'text', label: ctx.t('unregister'), action: '/unregister', row: true },
   ] : [
     { type: 'text', label: ctx.t('add'), action: '/add' },
+    { type: 'text', label: ctx.t('register'), action: '/register', row: true },
     { type: 'webApp', label: ctx.t('webapp'), action: `${webApp}&mode=app` },
-    {
-      type: 'url',
-      label: ctx.t('website'),
-      action: webURL,
-    },
+    { type: 'url', label: ctx.t('website'), action: webURL, row: true },
   ];
-  //if (!!inviteLink) inlineButtons.push({ type: 'url', label: ctx.t('group'), action: inviteLink });
+  if (!!inviteLink) inlineButtons.push({ type: 'url', label: ctx.t('group'), action: inviteLink });
   const inlineKeyboard = makeInlineKeyboard(inlineButtons);
   //await ctx.reply('Hello!', { reply_markup: removeKeyboardMarkup() });
-  await ctx.reply(ctx.t('menu'), { reply_markup: inlineKeyboard });
+  await ctx.reply(ctx.t('option'), { reply_markup: inlineKeyboard });
+  await ctx.deleteMessage();
+};
+
+const helpInlineKeyboard = async (ctx: BotContext, showLangs: boolean = false): Promise<void> => {
+  const inlineButtons: InlineButton[] = [
+    { type: 'text', label: ctx.t('menu'), action: '/start', row: true },
+  ];
+  if (showLangs)
+  for (let lang of Object.keys(locales)) {
+    inlineButtons.push({ type: 'text', label: lang, action: '/lang '+lang });
+  }
+  const inlineKeyboard = makeInlineKeyboard(inlineButtons);
+  await ctx.reply(ctx.t('option'), { reply_markup: inlineKeyboard });
   await ctx.deleteMessage();
 };
 
@@ -135,7 +154,7 @@ const registerHelper = async (conversation: BotConversation, ctx: BotContext): P
     const { data, error } = await supabaseClient.from('helpers').upsert({ id: ctx.session.user.id, chat: chat.id }).select();
     if (!error && data.length>0) {
       ctx.session.user.helper_in = chat.id;
-      await pmInlineKeyboard(ctx, chat.invite);
+      await pmInlineKeyboard(ctx); // , chat.invite
     } else {
       await ctx.reply('Error!');
     }
@@ -163,6 +182,7 @@ const taskList = async (conversation: BotConversation, ctx: BotContext): Promise
     const now: Date = new Date;
     const { data, error } = await supabaseClient.from('tasks').select('*').gt('expiry_date', now.toISOString()).eq('chat', ctx.session.user?.helper_in).eq('status', 'open').is('helper', null);
     await ctx.reply(JSON.stringify(data,null,2));
+    await pmInlineKeyboard(ctx); // , ctx.session.data?.chat?.invite
   } else {
     await ctx.reply('Ha-ha!');
   }
@@ -179,6 +199,7 @@ const addTask = async (conversation: BotConversation, ctx: BotContext): Promise<
       if (DEBUG) console.log('convCtx.msg.text:', convCtx.msg.text);
       if (convCtx.msg.text.startsWith('/exit')) {
         await ctx.reply(ctx.t('bye'));
+        await convCtx.deleteMessage();
         return;
       } else if (convCtx.msg.text.length>3) {
         const expiry_date = new Date();
@@ -205,6 +226,7 @@ const getCountry = async (conversation: BotConversation, ctx: BotContext): Promi
   if (DEBUG) console.log('convCtx.msg.text:', convCtx.msg.text);
   if (convCtx.msg.text.startsWith('/exit')) {
     await ctx.reply(ctx.t('bye'));
+    await convCtx.deleteMessage();
   } else if (convCtx.msg.text.length===2) {
     const { data, error } = await supabaseClient.from('countries').select('*').eq('code', convCtx.msg.text.toUpperCase());
     if (!error && data?.length>0) {
@@ -220,6 +242,7 @@ const getState = async (conversation: BotConversation, ctx: BotContext, country:
   if (DEBUG) console.log('convCtx.msg.text:', convCtx.msg.text);
   if (convCtx.msg.text.startsWith('/exit')) {
     await ctx.reply(ctx.t('bye'));
+    await convCtx.deleteMessage();
   } else if (convCtx.msg.text.length>0 && convCtx.msg.text!=='-') {
     const { data, error } = await supabaseClient.from('states').select('*').match({ country, 'code': convCtx.msg.text });
     if (!error && data?.length>0) {
@@ -235,6 +258,7 @@ const getCity = async (conversation: BotConversation, ctx: BotContext, country: 
   if (DEBUG) console.log('convCtx.msg.text:', convCtx.msg.text);
   if (convCtx.msg.text.startsWith('/exit')) {
     await ctx.reply(ctx.t('bye'));
+    await convCtx.deleteMessage();
   } else if (convCtx.msg.text.length>0 && convCtx.msg.text!=='-') {
     const { data, error } = await supabaseClient.from('cities').select('*').eq('country', country).ilike('name', '%'+convCtx.msg.text+'%');
     if (!error && data?.length>0) {
@@ -302,12 +326,6 @@ const updateChat = async (conversation: BotConversation, ctx: BotContext): Promi
   return;
 };
 
-const showHelp = async (ctx: BotContext): Promise<void> => {
-  if (DEBUG) console.log('/help');
-  await ctx.reply(ctx.t('help', { locales: Object.keys(locales).join('|') }));
-  await ctx.deleteMessage();
-};
-
 export const initBot = async () => {
   const bot = new Bot<BotContext>(TELEGRAM_BOT_TOKEN);
 
@@ -359,70 +377,35 @@ export const initBot = async () => {
   bot.use(createConversation(updateChat, 'update'));
   //bot.errorBoundary((err) => console.error('App threw an error!', err),createConversation(register));
 
-  // Exit conversations when the inline keyboard's `exit` button is pressed.
-  bot.callbackQuery('/exit', async (ctx) => {
-    await ctx.conversation.exit();
-    await ctx.answerCallbackQuery();
-    if (DEBUG) console.log('callbackQuery /exit');
-  });
-  // replying /help command in
-  bot.hears(/help*(.+)?/, (ctx: BotContext) => showHelp(ctx));
-  // replying /menu command in
-  bot.hears(/menu*(.+)?/, async (ctx: BotContext) => {
-    if (DEBUG) console.log('hears menu, ctx.session.user:', ctx.session.user);
-    if (ctx.chat.id!==ctx.from.id) {
-      await chatInlineKeyboard(ctx, ctx.session.user?.helper_in === ctx.chat.id ? ['bot'] : ['add', 'register']); // ['tasks', 'unregister']
-    } else {
-      await pmInlineKeyboard(ctx);
-    }
-  });
-  // replying /upd command in
-  bot.command('upd', async (ctx: BotContext) => {
-    if (ctx.chat.id!==ctx.from.id) {
-      const { invite_link } = await bot.api.createChatInviteLink(ctx.chat.id);
-      if (!!invite_link) await supabaseClient.from('chats').update({ updated_at: new Date(), invite: invite_link }).eq('id', ctx.chat.id);
-      if (DEBUG) console.log('/upd invite_link:', invite_link);
-      await chatInlineKeyboard(ctx, ['update']);
-      //await ctx.reply(ctx.t('reg', { bot_name: TELEGRAM_BOT_NAME, chat_id: String(ctx.chat.id) }), { reply_to_message_id: ctx.msg.message_id });
-      if (ctx.msg?.message_id) await bot.api.deleteMessage(ctx.chat.id, ctx.msg.message_id);
-    } else {
-      await ctx.conversation.enter('update');
-    }
-  });
-
   // Only handle commands in private chats.
   const pm = bot.chatType('private');
   pm.callbackQuery('/add', async (ctx: BotContext) => {
-    //if (ctx.update.callback_query?.message?.message_id) await bot.api.deleteMessage(ctx.chat.id, ctx.update.callback_query.message.message_id);
+    //if (ctx.callbackQuery?.message?.message_id) await bot.api.deleteMessage(ctx.chat.id, ctx.callbackQuery.message.message_id);
     ctx.answerCallbackQuery();
     await ctx.conversation.enter('add');
   });
   pm.callbackQuery('/tasks', async (ctx: BotContext) => {
-    //if (ctx.update.callback_query?.message?.message_id) await bot.api.deleteMessage(ctx.chat.id, ctx.update.callback_query.message.message_id);
+    //if (ctx.callbackQuery?.message?.message_id) await bot.api.deleteMessage(ctx.chat.id, ctx.callbackQuery.message.message_id);
     ctx.answerCallbackQuery();
     await ctx.conversation.enter('tasks');
   });
   pm.callbackQuery('/register', async (ctx: BotContext) => {
-    //if (ctx.update.callback_query?.message?.message_id) await bot.api.deleteMessage(ctx.chat.id, ctx.update.callback_query.message.message_id);
+    //if (ctx.callbackQuery?.message?.message_id) await bot.api.deleteMessage(ctx.chat.id, ctx.callbackQuery.message.message_id);
     ctx.answerCallbackQuery();
     await ctx.conversation.enter('register');
   });
   pm.callbackQuery('/unregister', async (ctx: BotContext) => {
-    //if (ctx.update.callback_query?.message?.message_id) await bot.api.deleteMessage(ctx.chat.id, ctx.update.callback_query.message.message_id);
+    //if (ctx.callbackQuery?.message?.message_id) await bot.api.deleteMessage(ctx.chat.id, ctx.callbackQuery.message.message_id);
     ctx.answerCallbackQuery();
     await ctx.conversation.enter('unregister');
   });
-  pm.command('menu', (ctx: BotContext) => pmInlineKeyboard(ctx));
-  pm.command('help', (ctx: BotContext) => showHelp(ctx));
-  pm.command('exit', async (ctx: BotContext) => {
-    await ctx.conversation.exit();
-    ctx.deleteMessage();
+  pm.callbackQuery('/unregister', async (ctx: BotContext) => {
+    //if (ctx.callbackQuery?.message?.message_id) await bot.api.deleteMessage(ctx.chat.id, ctx.callbackQuery.message.message_id);
+    ctx.answerCallbackQuery();
+    await ctx.conversation.enter('unregister');
   });
-  pm.command('add', async (ctx: BotContext) => (await ctx.conversation.enter('add')));
-  pm.command('tasks', async (ctx: BotContext) => (await ctx.conversation.enter('tasks')));
-  pm.command('register', async (ctx: BotContext) => (await ctx.conversation.enter('register')));
-  pm.command('unregister', async (ctx: BotContext) => (await ctx.conversation.enter('unregister')));
-  pm.command('update', async (ctx: BotContext) => (await ctx.conversation.enter('update')));
+  pm.callbackQuery('/menu', (ctx: BotContext) => helpInlineKeyboard(ctx, true));
+  pm.callbackQuery('/start', (ctx: BotContext) => pmInlineKeyboard(ctx));
   pm.command('start', async (ctx: BotContext) => {
     const cmd = ctx.match.trim().toLowerCase();
     const cmds = cmd.split('_').filter(el=>!!el);
@@ -447,16 +430,8 @@ export const initBot = async () => {
         await pmInlineKeyboard(ctx, chat.invite);
       }
     } else {
-      ctx.reply(ctx.t('start'));
-      await ctx.deleteMessage();
+      await pmInlineKeyboard(ctx);
     }
-  });
-  pm.command('lang', async (ctx: BotContext) => {
-    if (!!!ctx.session.user?.id || Number(ctx.chat.id)<1) return;
-    const lang: Lang = ctx.match.trim().toLowerCase();
-    if (!!lang) await setLocale(ctx, lang);
-    await ctx.reply(ctx.t('start'));
-    ctx.deleteMessage();
   });
   pm.command('ping', async (ctx: BotContext) => {
     await ctx.reply(`Pong!
@@ -465,6 +440,11 @@ export const initBot = async () => {
     `);
     ctx.deleteMessage();
   });
+  pm.command('add', async (ctx: BotContext) => (await ctx.conversation.enter('add')));
+  pm.command('tasks', async (ctx: BotContext) => (await ctx.conversation.enter('tasks')));
+  pm.command('register', async (ctx: BotContext) => (await ctx.conversation.enter('register')));
+  pm.command('unregister', async (ctx: BotContext) => (await ctx.conversation.enter('unregister')));
+  pm.command('update', async (ctx: BotContext) => (await ctx.conversation.enter('update')));
 
   pm.hears(/files*(.+)?/, async (ctx: BotContext, dir = 'content') => {
     if (ADMIN_IDS.includes(ctx.from.id)) {
@@ -480,19 +460,63 @@ export const initBot = async () => {
     if (ADMIN_IDS.includes(ctx.session?.user?.id)) {
       await uploadBotFile(ctx);
     } else {
-      ctx.reply(ctx.t('start'));
+      await helpInlineKeyboard(ctx, true);
     }
   });
 
   pm.on('message:text', async (ctx: BotContext) => {
-    await ctx.reply(ctx.t('start'));
     if (ADMIN_IDS.includes(ctx.session?.user?.id)) {
       await ctx.reply(`${JSON.stringify(ctx.session,null,2)}`);
     }
-    ctx.deleteMessage();
+    await helpInlineKeyboard(ctx, true);
   });
   //pm.on('message:photo', (ctx: BotContext) => ctx.reply(ctx.t('start')));
   //pm.on('edited_message', (ctx: BotContext) => ctx.reply('Ha! Gotcha! You just edited this!', { reply_to_message_id: ctx.editedMessage.message_id }));
+
+  // replying /help command in
+  bot.hears(/help*(.+)?/, async (ctx: BotContext) => {
+    if (ctx.chat.id!==ctx.from.id) {
+      await chatInlineKeyboard(ctx, ['bot']); // ctx.session.user?.helper_in === ctx.chat.id ? ['tasks', 'unregister'] : ['add', 'register']
+    } else {
+      await helpInlineKeyboard(ctx, true); // , ctx.session.data?.chat?.invite
+    }
+  });
+  // replying /menu command in
+  bot.hears(/menu*(.+)?/, async (ctx: BotContext) => {
+    if (ctx.chat.id!==ctx.from.id) {
+      await chatInlineKeyboard(ctx, ['bot']); // ctx.session.user?.helper_in === ctx.chat.id ? ['tasks', 'unregister'] : ['add', 'register']
+    } else {
+      await pmInlineKeyboard(ctx); // , ctx.session.data?.chat?.invite
+    }
+  });
+  // replying /upd command in
+  bot.command('upd', async (ctx: BotContext) => {
+    if (ctx.chat.id!==ctx.from.id) {
+      const { invite_link } = await bot.api.createChatInviteLink(ctx.chat.id);
+      if (!!invite_link) await supabaseClient.from('chats').update({ updated_at: new Date(), invite: invite_link }).eq('id', ctx.chat.id);
+      if (DEBUG) console.log('/upd invite_link:', invite_link);
+      await chatInlineKeyboard(ctx, ['update']);
+      //await ctx.reply(ctx.t('reg', { bot_name: TELEGRAM_BOT_NAME, chat_id: String(ctx.chat.id) }), { reply_to_message_id: ctx.msg.message_id });
+    } else {
+      await ctx.conversation.enter('update');
+    }
+  });
+  // Exit conversations when the inline keyboard's `exit` button is pressed.
+  bot.callbackQuery('/exit', async (ctx) => {
+    await ctx.conversation.exit();
+    await ctx.answerCallbackQuery();
+    if (DEBUG) console.log('callbackQuery /exit');
+  });
+  bot.on('callback_query:data', async (ctx) => {
+    console.log('Unknown button event with ctx.callbackQuery:', ctx.callbackQuery);
+    await ctx.answerCallbackQuery(); // remove loading animation
+    const match = ctx.callbackQuery.data.split(' ');
+    if (match.length>1 && match[0]=='/lang') {
+      const lang: Lang = match[1].trim().toLowerCase();
+      if (!!lang) await setLocale(ctx, lang);
+    }
+    await helpInlineKeyboard(ctx, true);
+  });
 
   notifyAdmins();
 
