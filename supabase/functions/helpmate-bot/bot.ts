@@ -168,6 +168,14 @@ export const initBot = async () => {
 
   const bulkSendMessage = (ids: number[], text: string, options: object) => ids.forEach(id => sendMessage(id, text, options));
 
+  const bulkNotifyHelpers = (helpers: object[], fluent: string, desc: string, options: object) => {
+    for (let i=0;i<helpers.length;i++) {
+      const lang = helpers[i].profiles.lang || helpers[i].profiles.language_code;
+      const text = locales[lang][fluent].replaceAll('{$chat_title}', helpers[i].chats.title)+"\n "+desc;
+      sendMessage(helpers[i].id, text, options);
+    }
+  };
+
   const sendInlineButton = async (id: number, text: string, label: string, action: string, type: string = 'text', row: boolean = true): Promise<void> => {
     const inlineButtons: InlineButton[] = [{ type, label, action, row }];
     await sendMessage(id, text, { reply_markup: makeInlineKeyboard(inlineButtons) });
@@ -175,21 +183,24 @@ export const initBot = async () => {
 
   const bulkSendInline = (ids: number[], text: string, label: string, action: string, type: string = 'text', row: boolean = true) => ids.forEach(id => sendInlineButton(id, text, label, action, type, row));
 
-  const sendTaskInline = (lang: Lang, id: number, text: string, task_uid: string) => {
-    const inlineButtons: InlineButton[] = [
+  const sendTaskInline = (lang: Lang, id: number, text: string, task_uid: string, task?: object) => {
+    const inlineButtons: InlineButton[] = task ? [
       { type: 'text', label: locales[lang].task_accept, action: '/task accept '+task_uid, row: true },
       { type: 'text', label: locales[lang].task_bad, action: '/task bad '+task_uid, row: true },
+    ] : [
+      { type: 'text', label: locales[lang].task, action: '/task info '+task_uid, row: true },
     ];
     const inlineKeyboard = makeInlineKeyboard(inlineButtons);
     sendMessage(id, text, { reply_markup: makeInlineKeyboard(inlineButtons) });
   };
 
-  const bulkSendTaskInline = (helpers: object[], task: object) => {
+  const bulkSendTaskInline = (helpers: object[], fluent: string, task?: object) => {
     if (DEBUG) console.log('bulkSendTaskInline helpers:', helpers, 'task:', task);
     for (let i=0;i<helpers.length;i++) {
+      const { uid, description } = task || helpers[i];
       const lang = helpers[i].profiles.lang || helpers[i].profiles.language_code;
-      const text = locales[lang].task_created.replaceAll('{$chat_title}', helpers[i].chats.title)+"\n "+task.description;
-      sendTaskInline(lang, profilesData[0].id, text, task.uid);
+      const text = locales[lang][fluent].replaceAll('{$chat_title}', helpers[i].chats.title)+"\n "+description;
+      sendTaskInline(lang, helpers[i].profiles.id, text, uid, task);
     }
   };
 
@@ -205,7 +216,7 @@ export const initBot = async () => {
       const { data, error } = await supabaseClient.from('helpers').upsert({ id: ctx.session.user.id, chat: chat.id }).select();
       if (!error && data.length>0) {
         ctx.session.user.helper_in = chat.id;
-        //await ctx.answerCallbackQuery({ text: 'You have been added to helpers list', show_alert: true });
+        await ctx.answerCallbackQuery({ text: ctx.t('registered'), show_alert: true });
         await pmInlineKeyboard(ctx); // , chat.invite
       } else {
         await ctx.reply('Error!');
@@ -219,18 +230,32 @@ export const initBot = async () => {
 
   const unregisterHelper = async (conversation: BotConversation, ctx: BotContext): Promise<void> => {
     if (DEBUG) console.log('unregisterHelper ctx.session.user?.helper_in:', ctx.session.user?.helper_in, 'ctx.session.data:', ctx.session.data);
-    if (!!ctx.session.user?.helper_in) {
-      const { error } = await supabaseClient.from('helpers').delete().eq('id', ctx.session.user.id);
-      if (!error) {
-        ctx.session.user.helper_in = null;
-        //await ctx.answerCallbackQuery({ text: 'You have been removed from helpers list', show_alert: true });
+    const chat_id = ctx.session.user.helper_in;
+    if (!!chat_id) {
+      const update = await supabaseClient.from('tasks').update({ updated_at: new Date(), helper: null }).eq('status', 'open').eq('helper', ctx.session.user.id).select('*, profiles ( id, lang, language_code ), chats ( title )');
+      if (!update.error && update.data?.length>0) {
+        bulkSendTaskInline(update.data, 'task_returned');
+        const del = await supabaseClient.from('helpers').delete().eq('id', ctx.session.user.id);
+        if (DEBUG) console.log('unregisterHelper helpers del:', del);
+        if (!del.error) {
+          ctx.session.user.helper_in = null;
+          await ctx.answerCallbackQuery({ text: ctx.t('unregistered'), show_alert: true });
+        }
+        const tasks = update.data.map(el=>el.uid);
+        if (DEBUG) console.log('unregisterHelper tasks:', tasks);
+        const helpers = await supabaseClient.from('helpers').select('id, profiles ( id, lang, language_code ), chats ( title )').eq('chat', chat_id);
+        if (DEBUG) console.log('unregisterHelper helpers:', helpers);
+        if (!helpers.error && helpers.data?.length>0) {
+          bulkNotifyHelpers(helpers.data, 'tasks_returned', JSON.stringify(tasks,null,2));
+        }
+        //await replyInlineButton(ctx, ctx.t('task_created', { chat_title: chat.title })+"\n "+tasksData[0].description, ctx.t('task'), '/task info '+task_uid, 'text');
         await pmInlineKeyboard(ctx);
       } else {
         await ctx.reply('Error!');
-        await ctx.deleteMessage();
+        //await ctx.deleteMessage();
       }
     } else {
-      await ctx.reply('Ha-ha!');
+      await ctx.reply(ctx.t('error_nothelper'));
       await ctx.deleteMessage();
     }
   };
@@ -259,10 +284,10 @@ export const initBot = async () => {
           const { data: tasksData, error: tasksError } = await supabaseClient.from('tasks').upsert({ chat: chat.id, profile: ctx.from.id, description: convCtx.msg.text, expiry_date }).select();
           if (!tasksError && tasksData?.length>0) {
             const task_uid = tasksData[0].uid;
-            const { data: helpersData, error: helpersError } = await supabaseClient.from('helpers').select('id, profiles ( lang, language_code ), chats ( title )').eq('chat', chat.id);
+            const { data: helpersData, error: helpersError } = await supabaseClient.from('helpers').select('id, profiles ( id, lang, language_code ), chats ( title )').eq('chat', chat.id);
             if (!helpersError && helpersData?.length>0) {
               if (DEBUG) console.log('addTask helpers:', helpersError, helpersData.map(el=>el.id));
-              bulkSendTaskInline(helpersData, tasksData[0]);
+              bulkSendTaskInline(helpersData, 'task_created', tasksData[0]);
             }
             await replyInlineButton(ctx, ctx.t('task_created', { chat_title: chat.title })+"\n "+tasksData[0].description, ctx.t('task'), '/task info '+task_uid, 'text');
             done = true;
@@ -374,7 +399,7 @@ export const initBot = async () => {
     `);
     const convCtx = await conversation.waitFor(':text');
     if (convCtx.msg.text==='+') {
-      const { data, error } = await supabaseClient.from('chats').update({ updated_at: new Date(), ...chat }).eq('id', chat.id).select();
+      const update = await supabaseClient.from('chats').update({ updated_at: new Date(), ...chat }).eq('id', chat.id).select();
       if (DEBUG) console.log('updateChat chat update:', update);
       ctx.session.data = {};
       if (!error && data.length>0)
@@ -430,6 +455,13 @@ export const initBot = async () => {
 
   // Only handle commands in private chats.
   const pm = bot.chatType('private');
+  // Exit conversations when the inline keyboard's `exit` button is pressed.
+  pm.callbackQuery('/exit', async (ctx) => {
+    await ctx.conversation.exit();
+    await ctx.answerCallbackQuery();
+    await pmInlineKeyboard(ctx);
+    if (DEBUG) console.log('callbackQuery /exit');
+  });
   pm.callbackQuery('/add', async (ctx: BotContext) => {
     ctx.answerCallbackQuery();
     await ctx.conversation.enter('add');
@@ -448,6 +480,67 @@ export const initBot = async () => {
   });
   pm.callbackQuery('/menu', (ctx: BotContext) => helpInlineKeyboard(ctx, true));
   pm.callbackQuery('/start', (ctx: BotContext) => pmInlineKeyboard(ctx));
+
+  pm.on('callback_query:data', async (ctx) => {
+    if (DEBUG) console.log('Event with ctx.callbackQuery:', ctx.callbackQuery, ctx.from);
+    const match = ctx.callbackQuery.data.split(' ');
+    if (match.length>1 && match[0]=='/lang') {
+      const lang: Lang = match[1].trim().toLowerCase();
+      if (!!lang) await setLocale(ctx, lang);
+      await ctx.answerCallbackQuery(); // remove loading animation
+      await helpInlineKeyboard(ctx, true);
+    } else if (match.length>1 && match[0]==='/task') {
+      const action = match[1].trim();
+      const task_uid = match[2].trim();
+      const { data, error } = await supabaseClient.from('tasks').select('*, profiles ( id, username, lang, language_code ), chats ( title )').eq('uid', task_uid); // .eq('status', 'open').is('helper', null)
+      if (!error && data?.length>0) {
+        const task = data[0];
+        if (DEBUG) console.log('/task action:', action, 'task:', task);
+        const lang: Lang = task.profiles.lang || task.profiles.language_code;
+        if (action==='accept' && !task.helper) {
+          const update = await supabaseClient.from('tasks').update({ updated_at: new Date(), helper: ctx.from.id, status: 'open' }).eq('uid', task_uid).select();
+          if (DEBUG) console.log('/task:', task_uid, 'update:', update);
+          if (!update.error) {
+            sendInlineButton(task.profile, locales[lang].task_accepted, locales[lang].task, '/task info '+task_uid);
+            await ctx.answerCallbackQuery({ text: ctx.t('task_performer', { username: task.profiles.username }), show_alert: true });
+            await ctx.deleteMessage();
+          } else {
+            ctx.answerCallbackQuery({ text: ctx.t('error'), show_alert: true });
+          }
+        } else if (action==='bad' && !task.helper) {
+          const update = await supabaseClient.from('tasks').update({ updated_at: new Date(), helper: ctx.from.id, status: 'bad' }).eq('uid', task_uid).select();
+          if (DEBUG) console.log('/task:', task_uid, 'update:', update);
+          if (!update.error) {
+            sendInlineButton(task.profile, locales[lang].task_marked, locales[lang].task, '/task info '+task_uid);
+            await ctx.answerCallbackQuery({ text: ctx.t('task_marker'), show_alert: true });
+            await ctx.deleteMessage();
+          } else {
+            ctx.answerCallbackQuery({ text: ctx.t('error'), show_alert: true });
+          }
+        } else if (action==='info') {
+          ctx.answerCallbackQuery({ text: `Created at: ${task.created_at} \nHelper: ${task.helper} \nStatus: ${task.status} \nDescription: \n${task.description}`, show_alert: true });
+        } else {
+          ctx.answerCallbackQuery({ text: ctx.t('task_busy'), show_alert: true });
+          await ctx.deleteMessage();
+        }
+      } else {
+        ctx.answerCallbackQuery();
+      }
+    } else if (match.length>0 && match[0]==='/tasks' && !!ctx.session.user?.helper_in) {
+      await ctx.answerCallbackQuery();
+      let tasks;
+      const now: Date = new Date;
+      const action = match.length>1 && match[1].trim();
+      if (action==='helper') {
+        tasks = await supabaseClient.from('tasks').select('*').gt('expiry_date', now.toISOString()).eq('status', 'open').eq('helper', ctx.from.id);
+      } else {
+        tasks = await supabaseClient.from('tasks').select('*').gt('expiry_date', now.toISOString()).eq('status', 'open').eq('chat', ctx.session.user?.helper_in).is('helper', null);
+      }
+      await ctx.reply(JSON.stringify(tasks?.data?.map(el=>el.uid),null,2));
+    } else {
+      ctx.answerCallbackQuery(!!!ctx.session.user?.helper_in && { text: ctx.t('error_nothelper'), show_alert: true });
+    }
+  });
 
   pm.command('start', async (ctx: BotContext) => {
     const cmd = ctx.match.trim().toLowerCase();
@@ -493,75 +586,6 @@ export const initBot = async () => {
     ${Date.now()}
     `);
     ctx.deleteMessage();
-  });
-
-  // Exit conversations when the inline keyboard's `exit` button is pressed.
-  pm.callbackQuery('/exit', async (ctx) => {
-    await ctx.conversation.exit();
-    await ctx.answerCallbackQuery();
-    await pmInlineKeyboard(ctx);
-    if (DEBUG) console.log('callbackQuery /exit');
-  });
-
-  pm.on('callback_query:data', async (ctx) => {
-    if (DEBUG) console.log('Event with ctx.callbackQuery:', ctx.callbackQuery, ctx.from);
-    const match = ctx.callbackQuery.data.split(' ');
-    if (match.length>1 && match[0]=='/lang') {
-      const lang: Lang = match[1].trim().toLowerCase();
-      if (!!lang) await setLocale(ctx, lang);
-      await ctx.answerCallbackQuery(); // remove loading animation
-      await helpInlineKeyboard(ctx, true);
-    } else if (match.length>1 && match[0]=='/task') {
-      const action = match[1].trim();
-      const task_uid = match[2].trim();
-      const { data, error } = await supabaseClient.from('tasks').select('*, profiles ( lang, language_code ), chats ( title )').eq('uid', task_uid); // .eq('status', 'open').is('helper', null)
-      if (DEBUG) console.log('Event with ctx.callbackQuery tasks:', data);
-      if (!error && data?.length>0) {
-        const task = data[0];
-        const lang: Lang = task.profiles.lang || task.profiles.language_code;
-        if (action==='accept') {
-          task.helper = ctx.from.id;
-          task.status = 'open';
-          const update = await supabaseClient.from('tasks').update({ updated_at: new Date(), ...task }).eq('uid', task_uid).select();
-          if (!update.error) {
-            sendInlineButton(task.profile, locales[lang].task_accepted, locales[lang].task, '/task info '+task_uid);
-            await ctx.answerCallbackQuery({ text: ctx.t('task_performer'), show_alert: true });
-            await ctx.deleteMessage();
-          } else {
-            ctx.answerCallbackQuery({ text: ctx.t('error'), show_alert: true });
-          }
-        } else if (action==='bad') {
-          task.helper = ctx.from.id;
-          task.status = 'bad';
-          const update = await supabaseClient.from('tasks').update({ updated_at: new Date(), ...task }).eq('uid', task_uid).select();
-          if (!update.error) {
-            sendInlineButton(task.profile, locales[lang].task_marked, locales[lang].task, '/task info '+task_uid);
-            await ctx.answerCallbackQuery({ text: ctx.t('task_marker'), show_alert: true });
-            await ctx.deleteMessage();
-          } else {
-            ctx.answerCallbackQuery({ text: ctx.t('error'), show_alert: true });
-          }
-        } else {
-          ctx.answerCallbackQuery({ text: `Created at: ${task.created_at} \nStatus: ${task.status} \nDescription: \n${task.description}`, show_alert: true });
-        }
-      } else {
-        ctx.answerCallbackQuery();
-      }
-    } else if (match.length>0 && match[0]=='/tasks' && !!ctx.session.user?.helper_in) {
-      await ctx.answerCallbackQuery();
-      let tasks;
-      const now: Date = new Date;
-      const action = match.length>1 && match[1].trim();
-      if (action==='helper') {
-        tasks = await supabaseClient.from('tasks').select('*').gt('expiry_date', now.toISOString()).eq('status', 'open').eq('helper', ctx.from.id);
-      } else {
-        tasks = await supabaseClient.from('tasks').select('*').gt('expiry_date', now.toISOString()).eq('status', 'open').eq('chat', ctx.session.user?.helper_in).is('helper', null);
-      }
-      await ctx.reply(JSON.stringify(tasks?.data?.map(el=>el.uid),null,2));
-      //ctx.deleteMessage();
-    } else {
-      ctx.answerCallbackQuery();
-    }
   });
 
   pm.hears(/files*(.+)?/, async (ctx: BotContext, dir = 'content') => {
@@ -620,8 +644,6 @@ export const initBot = async () => {
       await ctx.conversation.enter('update');
     }
   });
-
-
 
   bulkSendMessage(ADMIN_IDS, `The @${TELEGRAM_BOT_NAME} <b>bot initialized</b>!`);
 
