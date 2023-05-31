@@ -495,6 +495,14 @@ export const initBot = async () => {
     ctx.deleteMessage();
   });
 
+  // Exit conversations when the inline keyboard's `exit` button is pressed.
+  pm.callbackQuery('/exit', async (ctx) => {
+    await ctx.conversation.exit();
+    await ctx.answerCallbackQuery();
+    await pmInlineKeyboard(ctx);
+    if (DEBUG) console.log('callbackQuery /exit');
+  });
+
   pm.on('callback_query:data', async (ctx) => {
     if (DEBUG) console.log('Event with ctx.callbackQuery:', ctx.callbackQuery, ctx.from);
     const match = ctx.callbackQuery.data.split(' ');
@@ -613,13 +621,7 @@ export const initBot = async () => {
     }
   });
 
-  // Exit conversations when the inline keyboard's `exit` button is pressed.
-  bot.callbackQuery('/exit', async (ctx) => {
-    await ctx.conversation.exit();
-    await ctx.answerCallbackQuery();
-    await pmInlineKeyboard(ctx);
-    if (DEBUG) console.log('callbackQuery /exit');
-  });
+
 
   bulkSendMessage(ADMIN_IDS, `The @${TELEGRAM_BOT_NAME} <b>bot initialized</b>!`);
 
