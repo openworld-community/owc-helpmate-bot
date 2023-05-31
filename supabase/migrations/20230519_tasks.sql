@@ -7,6 +7,7 @@ create table public.tasks (
   profile BIGINT NULL,
   helper BIGINT NULL,
   status VARCHAR NULL DEFAULT 'open'::character varying , -- open bad closed expired
+  message JSON NULL,
   description TEXT NULL,
   comments TEXT NULL,
   expiry_date TIMESTAMP WITH TIME ZONE NULL DEFAULT now() ,
