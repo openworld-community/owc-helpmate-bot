@@ -189,6 +189,7 @@ export const initBot = async () => {
       { type: 'text', label: locales[lang].task_bad, action: '/task bad '+task_uid, row: true },
     ] : [
       { type: 'text', label: locales[lang].task_accept, action: '/task accept '+task_uid, row: true },
+      { type: 'text', label: locales[lang].task_close, action: '/task close '+task_uid, row: true },
       { type: 'text', label: locales[lang].task_bad, action: '/task bad '+task_uid, row: true },
     ]) : [
       { type: 'text', label: locales[lang].task, action: '/task info '+task_uid, row: true },
@@ -502,7 +503,6 @@ export const initBot = async () => {
           if (!update.error) {
             sendInlineButton(task.profile, locales[lang].task_accepted, locales[lang].task, '/task info '+task_uid);
             await ctx.answerCallbackQuery({ text: ctx.t('task_performer', { username: task.profiles.username }), show_alert: true });
-            await ctx.deleteMessage();
           } else {
             ctx.answerCallbackQuery({ text: ctx.t('error'), show_alert: true });
           }
@@ -516,8 +516,8 @@ export const initBot = async () => {
           } else {
             ctx.answerCallbackQuery({ text: ctx.t('error'), show_alert: true });
           }
-        } else if (action==='close' && task.helper) {
-          const update = await supabaseClient.from('tasks').update({ updated_at: new Date(), status: 'closed' }).eq('uid', task_uid).select();
+        } else if (action==='close') {
+          const update = await supabaseClient.from('tasks').update({ updated_at: new Date(), helper: ctx.from.id, status: 'closed' }).eq('uid', task_uid).select();
           if (DEBUG) console.log('/task:', task_uid, 'update:', update);
           if (!update.error) {
             sendInlineButton(task.profile, locales[lang].task_closed, locales[lang].task, '/task info '+task_uid);
