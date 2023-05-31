@@ -184,10 +184,13 @@ export const initBot = async () => {
   const bulkSendInline = (ids: number[], text: string, label: string, action: string, type: string = 'text', row: boolean = true) => ids.forEach(id => sendInlineButton(id, text, label, action, type, row));
 
   const sendTaskInline = (lang: Lang, id: number, text: string, task_uid: string, task?: object) => {
-    const inlineButtons: InlineButton[] = task ? [
-      { type: 'text', label: locales[lang].task_accept, action: '/task accept '+task_uid, row: true },
+    const inlineButtons: InlineButton[] = task ? (task.helper === id ? [
+      { type: 'text', label: locales[lang].task_close, action: '/task close '+task_uid, row: true },
       { type: 'text', label: locales[lang].task_bad, action: '/task bad '+task_uid, row: true },
     ] : [
+      { type: 'text', label: locales[lang].task_accept, action: '/task accept '+task_uid, row: true },
+      { type: 'text', label: locales[lang].task_bad, action: '/task bad '+task_uid, row: true },
+    ]) : [
       { type: 'text', label: locales[lang].task, action: '/task info '+task_uid, row: true },
     ];
     const inlineKeyboard = makeInlineKeyboard(inlineButtons);
@@ -509,6 +512,16 @@ export const initBot = async () => {
           if (!update.error) {
             sendInlineButton(task.profile, locales[lang].task_marked, locales[lang].task, '/task info '+task_uid);
             await ctx.answerCallbackQuery({ text: ctx.t('task_marker'), show_alert: true });
+            await ctx.deleteMessage();
+          } else {
+            ctx.answerCallbackQuery({ text: ctx.t('error'), show_alert: true });
+          }
+        } else if (action==='close' && task.helper) {
+          const update = await supabaseClient.from('tasks').update({ updated_at: new Date(), status: 'closed' }).eq('uid', task_uid).select();
+          if (DEBUG) console.log('/task:', task_uid, 'update:', update);
+          if (!update.error) {
+            sendInlineButton(task.profile, locales[lang].task_closed, locales[lang].task, '/task info '+task_uid);
+            await ctx.answerCallbackQuery({ text: ctx.t('task_closer'), show_alert: true });
             await ctx.deleteMessage();
           } else {
             ctx.answerCallbackQuery({ text: ctx.t('error'), show_alert: true });
