@@ -14,6 +14,5 @@ create table public.tasks (
   updated_at TIMESTAMP WITH TIME ZONE NULL DEFAULT now() ,
   CONSTRAINT tasks_pkey PRIMARY KEY (uid),
   CONSTRAINT tasks_chat_fkey FOREIGN KEY (chat) REFERENCES public.chats (id) ON DELETE NO ACTION ON UPDATE NO ACTION,
-  CONSTRAINT tasks_profile_fkey FOREIGN KEY (profile) REFERENCES public.profiles (id) ON DELETE NO ACTION ON UPDATE NO ACTION,
-  CONSTRAINT tasks_helper_fkey FOREIGN KEY (helper) REFERENCES public.helpers (id) ON DELETE NO ACTION ON UPDATE NO ACTION
+  CONSTRAINT tasks_profile_fkey FOREIGN KEY (profile) REFERENCES public.profiles (id) ON DELETE NO ACTION ON UPDATE NO ACTION
 );
