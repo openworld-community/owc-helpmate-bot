@@ -40,7 +40,7 @@ try {
         const text = `
         Cronjob '${name}' is done at ${now}
         expired tasks:
-        ${data ? JSON.stringify(data) : 'none'}
+        ${data?.length>0 ? JSON.stringify(data.map(el=>el.uid)) : 'none'}
         `;
         const results = await notifyAdmins(text);
         return new Response(JSON.stringify(results,null,2), { status: 200, headers: { 'Content-Type': 'application/json' }})
