@@ -216,8 +216,8 @@ export const initBot = async () => {
       const { data, error } = await supabaseClient.from('helpers').upsert({ id: ctx.session.user.id, chat: chat.id }).select();
       if (!error && data.length>0) {
         ctx.session.user.helper_in = chat.id;
-        await ctx.answerCallbackQuery({ text: ctx.t('registered'), show_alert: true });
         await pmInlineKeyboard(ctx); // , chat.invite
+        await ctx.answerCallbackQuery({ text: ctx.t('registered'), show_alert: true });
       } else {
         await ctx.reply('Error!');
         await ctx.deleteMessage();
@@ -232,15 +232,14 @@ export const initBot = async () => {
     if (DEBUG) console.log('unregisterHelper ctx.session.user?.helper_in:', ctx.session.user?.helper_in, 'ctx.session.data:', ctx.session.data);
     const chat_id = ctx.session.user.helper_in;
     if (!!chat_id) {
+      const del = await supabaseClient.from('helpers').delete().eq('id', ctx.session.user.id);
+      if (DEBUG) console.log('unregisterHelper helpers del:', del);
+      if (!del.error) {
+        ctx.session.user.helper_in = null;
+      }
       const update = await supabaseClient.from('tasks').update({ updated_at: new Date(), helper: null }).eq('status', 'open').eq('helper', ctx.session.user.id).select('*, profiles ( id, lang, language_code ), chats ( title )');
       if (!update.error && update.data?.length>0) {
         bulkSendTaskInline(update.data, 'task_returned');
-        const del = await supabaseClient.from('helpers').delete().eq('id', ctx.session.user.id);
-        if (DEBUG) console.log('unregisterHelper helpers del:', del);
-        if (!del.error) {
-          ctx.session.user.helper_in = null;
-          await ctx.answerCallbackQuery({ text: ctx.t('unregistered'), show_alert: true });
-        }
         const tasks = update.data.map(el=>el.uid);
         if (DEBUG) console.log('unregisterHelper tasks:', tasks);
         const helpers = await supabaseClient.from('helpers').select('id, profiles ( id, lang, language_code ), chats ( title )').eq('chat', chat_id);
@@ -248,12 +247,9 @@ export const initBot = async () => {
         if (!helpers.error && helpers.data?.length>0) {
           bulkNotifyHelpers(helpers.data, 'tasks_returned', JSON.stringify(tasks,null,2));
         }
-        //await replyInlineButton(ctx, ctx.t('task_created', { chat_title: chat.title })+"\n "+tasksData[0].description, ctx.t('task'), '/task info '+task_uid, 'text');
-        await pmInlineKeyboard(ctx);
-      } else {
-        await ctx.reply('Error!');
-        //await ctx.deleteMessage();
       }
+      await pmInlineKeyboard(ctx);
+      await ctx.answerCallbackQuery({ text: ctx.t('unregistered'), show_alert: true });
     } else {
       await ctx.reply(ctx.t('error_nothelper'));
       await ctx.deleteMessage();
