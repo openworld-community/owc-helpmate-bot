@@ -29,7 +29,7 @@ export const locales = {
     update_state: "Wrong state code! Start chat update again!",
     update_city: "Wrong city name! Start chat update again!",
     update: "Update chat info",
-    tasks: "Open tasks",
+    tasks: "Active tasks",
     tasks_helper: "Your tasks",
     tasks_returned: "A bunch of tasks marked open",
     task_returned: "Your task is marked open again",
