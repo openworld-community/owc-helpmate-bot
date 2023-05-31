@@ -8,6 +8,7 @@ console.info(`Cron "${APP_NAME}" up and running!`);
 
 const sendMessage = async (message, contentType = 'application/json', method = 'post') => {
   if (!!!TELEGRAM_BOT_SEND_MESSAGE) return `{"ok": false, "error": "add 'TELEGRAM_BOT_SEND_MESSAGE' secret!"}`;
+  
   return await (await fetch(TELEGRAM_BOT_SEND_MESSAGE, {
     method,
     headers: {
