@@ -310,7 +310,16 @@ export const initBot = async () => {
           if (DEBUG) console.log('addTask chat:', chat);
           const expiry_date = new Date();
           expiry_date.setDate(expiry_date.getDate() + 1); // plus 1 day
-          const { data: tasksData, error: tasksError } = await supabaseClient.from('tasks').upsert({ chat: chat?.id || null, profile: ctx.from.id, description: convCtx.msg.text, expiry_date }).select();
+          const task = {
+            country: ctx.session.user.country,
+            state: ctx.session.user.state,
+            city: ctx.session.user.city,
+            chat: chat?.id || null,
+            profile: ctx.from.id,
+            description: convCtx.msg.text,
+            expiry_date
+          };
+          const { data: tasksData, error: tasksError } = await supabaseClient.from('tasks').upsert(task).select();
           if (!tasksError && tasksData?.length>0) {
             const task_uid = tasksData[0].uid;
             const { data: helpersData, error: helpersError } = await supabaseClient.from('helpers').select('id, profiles ( id, lang, language_code ), chats ( title )').eq('chat', chat.id);
@@ -574,7 +583,7 @@ export const initBot = async () => {
       } else if (!!ctx.session.user.helper_in) {
         tasks = await supabaseClient.from('tasks').select('*').gt('expiry_date', now.toISOString()).eq('status', 'open').eq('chat', ctx.session.user.helper_in).is('helper', null);
       } else if (ctx.session.user.country) {
-        tasks = await supabaseClient.from('tasks').select('*, chats!inner(*)').gt('expiry_date', now.toISOString()).eq('status', 'open').eq('chats.country', ctx.session.user.country).is('helper', null);
+        tasks = await supabaseClient.from('tasks').select('*, chats!inner(*)').gt('expiry_date', now.toISOString()).eq('status', 'open').or(`country.eq.${ctx.session.user.country}`, { foreignTable: 'chats' }).is('helper', null);
       }
       if (DEBUG) console.log('/tasks tasks:', tasks);
       if (tasks?.data) {
