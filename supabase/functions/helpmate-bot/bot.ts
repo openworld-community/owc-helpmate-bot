@@ -69,23 +69,23 @@ const makeInlineKeyboard = (inlineButtons: InlineButton[]): InlineKeyboard => {
   return inlineKeyboard;
 };
 
-const chatInlineKeyboard = async (ctx: BotContext, actions: string[] = ['register']): Promise<void> => {
+const chatInlineKeyboard = async (ctx: BotContext, actions: string[] = ['register'], del: boolean = true): Promise<void> => {
   const inlineButtons: InlineButton[] = actions.map(action => {
     const tgURL = `https://t.me/${TELEGRAM_BOT_NAME}?start=${action}_${ctx.chat.id}`;
     return { type: 'url', label: ctx.t(action), action: tgURL };
   });
   const inlineKeyboard = makeInlineKeyboard(inlineButtons);
   await ctx.reply(ctx.t('button'), { reply_markup: inlineKeyboard }); // , reply_to_message_id: ctx.msg.message_id
-  await ctx.deleteMessage();
+  if (del) await ctx.deleteMessage();
 };
 
-const pmInlineKeyboard = async (ctx: BotContext, inviteLink?: string): Promise<void> => {
+const pmInlineKeyboard = async (ctx: BotContext, inviteLink: string = '', del: boolean = true): Promise<void> => {
   const user: UserData = ctx.session.user;
   if (!!!user?.id) return;
 
   const webQry = `?uid=${user.uid}&lang=${user.lang}`;
   const webApp = `${TELEGRAM_BOT_WEBAPP}${webQry}`;
-  const webURL = DEBUG ? `http://127.0.0.1:3003/${webQry}` : webApp;
+  const webURL = DEBUG ? `http://127.0.0.1:3000/${webQry}` : webApp;
 
   const inlineButtons: InlineButton[] = !!ctx.session.user?.helper_in ? [
     { type: 'text', label: ctx.t('tasks'), action: '/tasks', row: true },
@@ -101,10 +101,10 @@ const pmInlineKeyboard = async (ctx: BotContext, inviteLink?: string): Promise<v
   const inlineKeyboard = makeInlineKeyboard(inlineButtons);
   //await ctx.reply('Hello!', { reply_markup: removeKeyboardMarkup() });
   await ctx.reply(ctx.t('option'), { reply_markup: inlineKeyboard });
-  await ctx.deleteMessage();
+  if (del) await ctx.deleteMessage();
 };
 
-const helpInlineKeyboard = async (ctx: BotContext, showLangs: boolean = false): Promise<void> => {
+const helpInlineKeyboard = async (ctx: BotContext, showLangs: boolean = false, del: boolean = true): Promise<void> => {
   const inlineButtons: InlineButton[] = [
     { type: 'text', label: ctx.t('menu'), action: '/start', row: true },
   ];
@@ -114,12 +114,13 @@ const helpInlineKeyboard = async (ctx: BotContext, showLangs: boolean = false): 
   }
   const inlineKeyboard = makeInlineKeyboard(inlineButtons);
   await ctx.reply(ctx.t('option'), { reply_markup: inlineKeyboard });
-  await ctx.deleteMessage();
+  if (del) await ctx.deleteMessage();
 };
 
-const replyInlineButton = async (ctx: BotContext, text: string, label: string, action: string, type: string = 'text', row: boolean = true): Promise<void> => {
+const replyInlineButton = async (ctx: BotContext, text: string, label: string, action: string, type: string = 'text', row: boolean = true, del: boolean = false): Promise<void> => {
   const inlineButtons: InlineButton[] = [{ type, label, action, row }];
   await ctx.reply(text, { reply_markup: makeInlineKeyboard(inlineButtons) });
+  if (del) await ctx.deleteMessage();
 };
 
 const exitInlineButton = async (ctx: BotContext, text: string): Promise<void> => replyInlineButton(ctx, text, ctx.t('exit'), '/exit');
@@ -183,20 +184,21 @@ export const initBot = async () => {
 
   const bulkSendInline = (ids: number[], text: string, label: string, action: string, type: string = 'text', row: boolean = true) => ids.forEach(id => sendInlineButton(id, text, label, action, type, row));
 
-  const sendTaskInline = (lang: Lang, id: number, text: string, task_uid: string, task?: object) => {
-    const inlineButtons: InlineButton[] = task ? (task.helper === id ? [
-      { type: 'text', label: locales[lang].task_close, action: '/task close '+task_uid, row: true },
-      { type: 'text', label: locales[lang].task_bad, action: '/task bad '+task_uid, row: true },
+  const makeTaskInline = (lang: Lang, pid: number, task_uid: string, task?: object, row: boolean = true) => {
+    const inlineButtons: InlineButton[] = task ? (task.helper === pid ? [
+      { type: 'text', label: locales[lang].task_close, action: '/task close '+task_uid, row },
+      { type: 'text', label: locales[lang].task_bad, action: '/task bad '+task_uid, row },
     ] : [
-      { type: 'text', label: locales[lang].task_accept, action: '/task accept '+task_uid, row: true },
-      { type: 'text', label: locales[lang].task_close, action: '/task close '+task_uid, row: true },
-      { type: 'text', label: locales[lang].task_bad, action: '/task bad '+task_uid, row: true },
+      { type: 'text', label: locales[lang].task_accept, action: '/task accept '+task_uid, row },
+      { type: 'text', label: locales[lang].task_close, action: '/task close '+task_uid, row },
+      { type: 'text', label: locales[lang].task_bad, action: '/task bad '+task_uid, row },
     ]) : [
-      { type: 'text', label: locales[lang].task, action: '/task info '+task_uid, row: true },
+      { type: 'text', label: locales[lang].task, action: '/task info '+task_uid, row },
     ];
-    const inlineKeyboard = makeInlineKeyboard(inlineButtons);
-    sendMessage(id, text, { reply_markup: makeInlineKeyboard(inlineButtons) });
+    return makeInlineKeyboard(inlineButtons);
   };
+
+  const sendTaskInline = (text: string, lang: Lang, pid: number, task_uid: string, task?: object) => sendMessage(pid, text, { reply_markup: makeTaskInline(lang, pid, task_uid, task) });
 
   const bulkSendTaskInline = (helpers: object[], fluent: string, task?: object) => {
     if (DEBUG) console.log('bulkSendTaskInline helpers:', helpers, 'task:', task);
@@ -204,56 +206,76 @@ export const initBot = async () => {
       const { uid, description } = task || helpers[i];
       const lang = helpers[i].profiles.lang || helpers[i].profiles.language_code;
       const text = locales[lang][fluent].replaceAll('{$chat_title}', helpers[i].chats.title)+"\n "+description;
-      sendTaskInline(lang, helpers[i].profiles.id, text, uid, task);
+      sendTaskInline(text, lang, helpers[i].profiles.id, uid, task);
     }
   };
 
   const registerHelper = async (conversation: BotConversation, ctx: BotContext): Promise<void> => {
     if (DEBUG) console.log('registerHelper ctx.session.user?.id:', ctx.session.user?.id, 'ctx.session.data:', ctx.session.data);
+    let registered = false;
     const chat = ctx.session.data?.chat;
     if (CHECK_LOCATION && chat && (chat.country!==ctx.session.user.country || !isMember(chat, ctx.session.user))) {
       await ctx.reply(ctx.t('member', { chat_title: chat.title, chat_id: String(chat.id) }));
       await ctx.deleteMessage();
       return;
     }
-    if (!!chat?.id && !!!ctx.session.user?.helper_in) {
-      const { data, error } = await supabaseClient.from('helpers').upsert({ id: ctx.session.user.id, chat: chat.id }).select();
-      if (!error && data.length>0) {
-        ctx.session.user.helper_in = chat.id;
+    if ((!!chat?.id && !!!ctx.session.user?.helper_in) || ctx.session.user.role!=='helper') {
+      const chat_id = chat?.id || null;
+      const upsert = await supabaseClient.from('helpers').upsert({ id: ctx.session.user.id, chat: chat_id });
+      if (!upsert.error) {
+        ctx.session.user.helper_in = chat_id;
+        const update = await supabaseClient.from('profiles').update({ updated_at: new Date(), role: 'helper' }).eq('id', ctx.session.user.id);
+        if (!update.error) {
+          ctx.session.user.role = 'helper';
+          registered = true;
+        }
+      }
+      if (registered) {
         await pmInlineKeyboard(ctx); // , chat.invite
         await ctx.answerCallbackQuery({ text: ctx.t('registered'), show_alert: true });
       } else {
-        await ctx.reply('Error!');
+        await ctx.reply(ctx.t('error'));
         await ctx.deleteMessage();
       }
     } else {
-      await ctx.reply('Ha-ha!');
+      await ctx.reply(ctx.t('error_helper'));
       await ctx.deleteMessage();
     }
   };
 
   const unregisterHelper = async (conversation: BotConversation, ctx: BotContext): Promise<void> => {
     if (DEBUG) console.log('unregisterHelper ctx.session.user?.helper_in:', ctx.session.user?.helper_in, 'ctx.session.data:', ctx.session.data);
-    const chat_id = ctx.session.user.helper_in;
-    if (!!chat_id) {
+    let unregistered = false;
+    const is_helper = ctx.session.user.helper_in || ctx.session.user.role === 'helper';
+    if (is_helper) {
       const del = await supabaseClient.from('helpers').delete().eq('id', ctx.session.user.id);
       if (DEBUG) console.log('unregisterHelper helpers del:', del);
       if (!del.error) {
         ctx.session.user.helper_in = null;
-      }
-      const update = await supabaseClient.from('tasks').update({ updated_at: new Date(), helper: null }).eq('status', 'open').eq('helper', ctx.session.user.id).select('*, profiles ( id, lang, language_code ), chats ( title )');
-      if (!update.error && update.data?.length>0) {
-        bulkSendTaskInline(update.data, 'task_returned');
-        const tasks = update.data.map(el=>el.uid);
-        if (DEBUG) console.log('unregisterHelper tasks:', tasks);
-        const helpers = await supabaseClient.from('helpers').select('id, profiles ( id, lang, language_code ), chats ( title )').eq('chat', chat_id);
-        if (DEBUG) console.log('unregisterHelper helpers:', helpers);
-        if (!helpers.error && helpers.data?.length>0) {
-          bulkNotifyHelpers(helpers.data, 'tasks_returned', JSON.stringify(tasks,null,2));
+        const update = await supabaseClient.from('profiles').update({ updated_at: new Date(), role: 'user' }).eq('id', ctx.session.user.id);
+        if (!update.error) {
+          ctx.session.user.role = 'user';
+          unregistered = true;
         }
       }
-      await pmInlineKeyboard(ctx);
-      await ctx.answerCallbackQuery({ text: ctx.t('unregistered'), show_alert: true });
+      if (unregistered) {
+        const update = await supabaseClient.from('tasks').update({ updated_at: new Date(), helper: null }).eq('status', 'open').eq('helper', ctx.session.user.id).select('*, profiles ( id, lang, language_code ), chats ( title )');
+        if (!update.error && update.data?.length>0) {
+          bulkSendTaskInline(update.data, 'task_returned');
+          const tasks = update.data.map(el=>el.uid);
+          if (DEBUG) console.log('unregisterHelper tasks:', tasks);
+          const helpers = await supabaseClient.from('helpers').select('id, profiles ( id, lang, language_code ), chats ( title )').eq('chat', chat_id);
+          if (DEBUG) console.log('unregisterHelper helpers:', helpers);
+          if (!helpers.error && helpers.data?.length>0) {
+            bulkNotifyHelpers(helpers.data, 'tasks_returned', JSON.stringify(tasks,null,2));
+          }
+        }
+        await pmInlineKeyboard(ctx);
+        await ctx.answerCallbackQuery({ text: ctx.t('unregistered'), show_alert: true });
+      } else {
+        await ctx.reply(ctx.t('error'));
+        await ctx.deleteMessage();
+      }
     } else {
       await ctx.reply(ctx.t('error_nothelper'));
       await ctx.deleteMessage();
@@ -262,13 +284,13 @@ export const initBot = async () => {
 
   const addTask = async (conversation: BotConversation, ctx: BotContext): Promise<void> => {
     let done = false;
-    const chat = ctx.session.data?.chat;
+    let chat = ctx.session.data?.chat;
     if (CHECK_LOCATION && chat && (chat.country!==ctx.session.user.country || !isMember(chat, ctx.session.user))) {
       await ctx.reply(ctx.t('member', { chat_title: chat.title, chat_id: String(chat.id) }));
       await ctx.deleteMessage();
       return;
     }
-    if (chat?.id && ctx.from.id === ctx.session.user.id) {
+    if (ctx.session.user.id) { // TODO:  && ctx.session.user.role !== 'helper'
       while (!done) {
         if (DEBUG) console.log('addTask ctx.session.data:', ctx.session.data);
         await exitInlineButton(ctx, ctx.t('task_description')+"\n "+ctx.t('press_exit'));
@@ -279,9 +301,16 @@ export const initBot = async () => {
           await convCtx.deleteMessage();
           return;
         } else if (convCtx.msg.text.length>3) {
+          if (!chat?.id) {
+            const chats = await supabaseClient.from('chats').select('*').or(`city.eq.${ctx.session.user.city},state.eq.${ctx.session.user.state},country.eq.${ctx.session.user.country}`).order('city', { ascending: true }).order('state', { ascending: true });
+            if (!chats.error && chats.data.length>0) {
+              chat = chats.data[0];
+            }
+          }
+          if (DEBUG) console.log('addTask chat:', chat);
           const expiry_date = new Date();
           expiry_date.setDate(expiry_date.getDate() + 1); // plus 1 day
-          const { data: tasksData, error: tasksError } = await supabaseClient.from('tasks').upsert({ chat: chat.id, profile: ctx.from.id, description: convCtx.msg.text, expiry_date }).select();
+          const { data: tasksData, error: tasksError } = await supabaseClient.from('tasks').upsert({ chat: chat?.id || null, profile: ctx.from.id, description: convCtx.msg.text, expiry_date }).select();
           if (!tasksError && tasksData?.length>0) {
             const task_uid = tasksData[0].uid;
             const { data: helpersData, error: helpersError } = await supabaseClient.from('helpers').select('id, profiles ( id, lang, language_code ), chats ( title )').eq('chat', chat.id);
@@ -535,17 +564,22 @@ export const initBot = async () => {
       } else {
         ctx.answerCallbackQuery();
       }
-    } else if (match.length>0 && match[0]==='/tasks' && !!ctx.session.user?.helper_in) {
+    } else if (match.length>0 && match[0]==='/tasks' && (!!ctx.session.user.helper_in || ctx.session.user.role==='helper')) {
       await ctx.answerCallbackQuery();
       let tasks;
       const now: Date = new Date;
       const action = match.length>1 && match[1].trim();
       if (action==='helper') {
         tasks = await supabaseClient.from('tasks').select('*').gt('expiry_date', now.toISOString()).eq('status', 'open').eq('helper', ctx.from.id);
-      } else {
-        tasks = await supabaseClient.from('tasks').select('*').gt('expiry_date', now.toISOString()).eq('status', 'open').eq('chat', ctx.session.user?.helper_in).is('helper', null);
+      } else if (!!ctx.session.user.helper_in) {
+        tasks = await supabaseClient.from('tasks').select('*').gt('expiry_date', now.toISOString()).eq('status', 'open').eq('chat', ctx.session.user.helper_in).is('helper', null);
+      } else if (ctx.session.user.country) {
+        tasks = await supabaseClient.from('tasks').select('*, chats!inner(*)').gt('expiry_date', now.toISOString()).eq('status', 'open').eq('chats.country', ctx.session.user.country).is('helper', null);
       }
-      await ctx.reply(JSON.stringify(tasks?.data?.map(el=>el.uid),null,2));
+      if (DEBUG) console.log('/tasks tasks:', tasks);
+      if (tasks?.data) {
+        await ctx.reply(JSON.stringify(tasks?.data?.map(el=>el.uid),null,2));
+      }
     } else {
       ctx.answerCallbackQuery(!!!ctx.session.user?.helper_in && { text: ctx.t('error_nothelper'), show_alert: true });
     }
