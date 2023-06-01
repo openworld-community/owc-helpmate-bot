@@ -14,6 +14,7 @@ export const langs = [
 export const locales = {
   en: {
     error: "Error!",
+    error_helper: "You are a helper already!",
     error_nothelper: "You are not a helper!",
     file_already: "This file has already been uploaded to the storage.",
     file_uploaded: "The file has been uploaded to the storage.",
@@ -70,6 +71,7 @@ export const locales = {
   },
   ru: {
     error: "Ошибка!",
+    error_helper: "Ты уже в списке помощников",
     error_nothelper: "Ты не в списке помощников",
     file_already: "Этот файл уже был загружен в хранилище",
     file_uploaded: "Файл успешно загружен в хранилище",
