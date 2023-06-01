@@ -8,7 +8,7 @@ create table public.profiles (
   state BIGINT NULL,
   city BIGINT NULL,
   is_bot BOOLEAN NULL,
-  role VARCHAR NULL DEFAULT 'user'::character varying,
+  role VARCHAR NULL DEFAULT 'user'::character varying, -- user helper
   phone VARCHAR NULL DEFAULT ''::character varying ,
   first_name VARCHAR NULL DEFAULT ''::character varying ,
   last_name VARCHAR NULL DEFAULT ''::character varying ,
