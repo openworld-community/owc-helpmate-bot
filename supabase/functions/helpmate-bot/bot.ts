@@ -28,6 +28,9 @@ const isMember = (chat, user, adminOnly = false) => {
   return (chat.creator === user.id || members.includes(user.id));
 };
 
+const isHelper = (user: UserData, task?: object): boolean => task ? (user?.helper_in===task.chat || (user?.role==='helper' && user?.country===task.country))
+  : (!!user?.helper_in || user?.role==='helper');
+
 type InlineButton = {
   type: string;
   label: string;
@@ -231,14 +234,13 @@ export const initBot = async () => {
         }
       }
       if (registered) {
-        await pmInlineKeyboard(ctx); // , chat.invite
         await ctx.answerCallbackQuery({ text: ctx.t('registered'), show_alert: true });
+        await pmInlineKeyboard(ctx); // , chat.invite
       } else {
-        await ctx.reply(ctx.t('error'));
+        await ctx.answerCallbackQuery({ text: ctx.t('error'), show_alert: true });
         await ctx.deleteMessage();
       }
     } else {
-      await ctx.reply(ctx.t('error_helper'));
       await ctx.answerCallbackQuery({ text: ctx.t('error_helper'), show_alert: true });
       await pmInlineKeyboard(ctx);
     }
@@ -522,8 +524,6 @@ export const initBot = async () => {
 
   pm.on('callback_query:data', async (ctx) => {
     if (DEBUG) console.log('Event with ctx.callbackQuery:', ctx.callbackQuery, ctx.from);
-    const isHelper = (task?): boolean => task ? (ctx.session.user.helper_in===task.chat || (ctx.session.user.role==='helper' && ctx.session.user.country===task.country))
-      : (!!ctx.session.user.helper_in || ctx.session.user.role==='helper');
     const match = ctx.callbackQuery.data.split(' ');
     if (match.length>1 && match[0]=='/lang') {
       const lang: Lang = match[1].trim().toLowerCase();
@@ -540,7 +540,7 @@ export const initBot = async () => {
         const lang: Lang = task.profiles.lang || task.profiles.language_code;
         if (action==='info') {
           ctx.answerCallbackQuery({ text: `Created at: ${task.created_at} \nHelper: ${task.helper} \nStatus: ${task.status} \nDescription: \n${task.description}`, show_alert: true });
-        } else if (isHelper(task)) {
+        } else if (isHelper(ctx.session.user, task)) {
           if (action==='accept' && !task.helper) {
             const update = await supabaseClient.from('tasks').update({ updated_at: new Date(), helper: ctx.from.id, status: 'open' }).eq('uid', task_uid).select();
             if (DEBUG) console.log('/task:', task_uid, 'update:', update);
@@ -579,7 +579,7 @@ export const initBot = async () => {
         ctx.answerCallbackQuery({ text: ctx.t('error_notask'), show_alert: true });
         await ctx.deleteMessage();
       }
-    } else if (match.length>0 && match[0]==='/tasks' && isHelper()) {
+    } else if (match.length>0 && match[0]==='/tasks' && isHelper(ctx.session.user)) {
       let tasks;
       const now: Date = new Date;
       const action = match.length>1 && match[1].trim();
@@ -595,7 +595,7 @@ export const initBot = async () => {
         await ctx.reply(JSON.stringify(tasks?.data?.map(el=>el.uid),null,2));
       }
       await ctx.answerCallbackQuery();
-    } else if (!isHelper()) {
+    } else if (!isHelper(ctx.session.user)) {
       ctx.answerCallbackQuery({ text: ctx.t('error_nothelper'), show_alert: true });
     }
   });
