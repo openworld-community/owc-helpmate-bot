@@ -222,7 +222,7 @@ export const initBot = async () => {
       await ctx.deleteMessage();
       return;
     }
-    if ((!!chat?.id && !!!ctx.session.user?.helper_in) || ctx.session.user.role!=='helper') {
+    if (ctx.session.user.role!=='helper') {
       const chat_id = chat?.id || null;
       const upsert = await supabaseClient.from('helpers').upsert({ id: ctx.session.user.id, chat: chat_id });
       if (!upsert.error) {
