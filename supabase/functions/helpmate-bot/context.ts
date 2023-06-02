@@ -47,6 +47,9 @@ export const syncLocale = async (ctx: Context): Promise<Lang> => {
 export const syncProfile = async (ctx: Context, user: User): Promise<Profile> => {
   if (!!!user?.id) return;
 
+  // sync profile data
+  let update_profile = false;
+
   const { data, error } = await supabaseClient.from('profiles').select('*').eq('id', user.id);
   let profile: Profile = !error && data.length>0 && data[0];
 
@@ -54,39 +57,36 @@ export const syncProfile = async (ctx: Context, user: User): Promise<Profile> =>
     profile = user;
     profile.lang = profile.language_code;
     if (ADMIN_IDS.includes(user.id)) profile.role = 'super';
-
     const insert = await supabaseClient.from('profiles').insert(profile).select();
     if (DEBUG) console.log('SessionSave profile insert:', insert);
     if (insert?.data) profile = insert.data[0];
   } else {
-    // sync profile data
-    let update_profile = false;
-
     const lang: Lang = await getLocale(ctx);
     if (!!lang && profile.lang !== lang) {
-      update_profile = true;
       profile.lang = lang;
+      update_profile = true;
     }
-
     ['phone','first_name','last_name','username','language_code'].forEach(key => {
       if (profile[key] !== user[key]) {
-        update_profile = true;
         profile[key] = user[key];
+        update_profile = true;
       }
     });
-
-    if (update_profile) {
-      const update = await supabaseClient.from('profiles').update({ updated_at: new Date(), ...profile }).eq('id', profile.id).select();
-      if (DEBUG) console.log('SessionSave profile update:', update);
-      if (update?.data) profile = update.data[0];
-    }
   }
 
   const helpers = profile.id && (await supabaseClient.from('helpers').select('chat').eq('id', profile.id));
   if (helpers?.data?.length>0) {
     profile.helper_in = helpers?.data[0].chat;
+    profile.role = 'helper';
+    update_profile = true;
   }
   if (DEBUG) console.log('profile.helper_in:', profile.helper_in);
+
+  if (update_profile) {
+    const update = await supabaseClient.from('profiles').update({ updated_at: new Date(), ...profile }).eq('id', profile.id).select();
+    if (DEBUG) console.log('SessionSave profile update:', update);
+    if (!update.error && update.data?.length>0) profile = update.data[0];
+  }
 
   return profile;
 };
