@@ -533,13 +533,13 @@ export const initBot = async () => {
     } else if (match.length>1 && match[0]==='/task') {
       const action = match[1].trim();
       const task_uid = match[2].trim();
-      const { data, error } = await supabaseClient.from('tasks').select('*, profiles ( id, username, lang, language_code ), chats ( title )').eq('uid', task_uid); // .eq('status', 'open').is('helper', null)
+      const { data, error } = await supabaseClient.from('tasks').select('*, profiles ( id, username, lang, language_code ), chats ( title ), countries ( name, code )').eq('uid', task_uid); // .eq('status', 'open').is('helper', null)
       if (!error && data?.length>0) {
         const task = data[0];
         if (DEBUG) console.log('/task action:', action, 'task:', task);
         const lang: Lang = task.profiles.lang || task.profiles.language_code;
         if (action==='info') {
-          ctx.answerCallbackQuery({ text: `Created at: ${task.created_at} \nHelper: ${task.helper} \nStatus: ${task.status} \nDescription: \n${task.description}`, show_alert: true });
+          ctx.answerCallbackQuery({ text: `Created at: ${task.created_at} \nby: ${task.profiles.username} \nHelper: ${task.helper} \nCountry: ${task.countries.code} \nChat: ${task.chats.title} \nStatus: ${task.status} \nDescription: \n${task.description}`, show_alert: true });
         } else if (isHelper(ctx.session.user, task)) {
           if (action==='accept' && !task.helper) {
             const update = await supabaseClient.from('tasks').update({ updated_at: new Date(), helper: ctx.from.id, status: 'open' }).eq('uid', task_uid).select();
@@ -550,7 +550,7 @@ export const initBot = async () => {
             } else {
               ctx.answerCallbackQuery({ text: ctx.t('error'), show_alert: true });
             }
-          } else if (action==='bad' && !task.helper) {
+          } else if (action==='bad' && (!task.helper || task.helper===ctx.session.user.id)) {
             const update = await supabaseClient.from('tasks').update({ updated_at: new Date(), helper: ctx.from.id, status: 'bad' }).eq('uid', task_uid).select();
             if (DEBUG) console.log('/task:', task_uid, 'update:', update);
             if (!update.error) {
@@ -560,7 +560,7 @@ export const initBot = async () => {
             } else {
               ctx.answerCallbackQuery({ text: ctx.t('error'), show_alert: true });
             }
-          } else if (action==='close') {
+          } else if (action==='close' && (!task.helper || task.helper===ctx.session.user.id)) {
             const update = await supabaseClient.from('tasks').update({ updated_at: new Date(), helper: ctx.from.id, status: 'closed' }).eq('uid', task_uid).select();
             if (DEBUG) console.log('/task:', task_uid, 'update:', update);
             if (!update.error) {
@@ -570,9 +570,11 @@ export const initBot = async () => {
             } else {
               ctx.answerCallbackQuery({ text: ctx.t('error'), show_alert: true });
             }
-          } else {
+          } else if (task.helper!==ctx.session.user.id) {
             ctx.answerCallbackQuery({ text: ctx.t('task_busy'), show_alert: true });
             await ctx.deleteMessage();
+          } else {
+            ctx.answerCallbackQuery({ text: ctx.t('error'), show_alert: true });
           }
         }
       } else {
